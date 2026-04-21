@@ -6,10 +6,12 @@ It is built around a clean split between wafer-domain logic and chart-library in
 - `packages/core`: wafer geometry, die generation, clipping, transforms, metadata
 - `packages/renderer`: converts wafer + dies into a renderer-agnostic scene made of rectangles, text, and overlays
 - `packages/plotly-adapter`: converts that scene into Plotly `data` + `layout`
-- `examples/basic-demo`: feature-rich browser demo consuming the built package
-- `examples/plotly-integration-demo`: package-consumer demo using the built `wmap` output
+- `examples/basic-demo`: showcase demo with the richer controls and layout
+- `examples/plotly-integration-demo`: integration recipe demo using the built `wmap` output
 
 The goal is to make wafer plotting usable for web developers without pushing wafer geometry rules down into Plotly code.
+
+Detailed API documentation lives in [docs/API.md](/home/paul/projects/wmap/docs/API.md:1).
 
 ## Status
 
@@ -27,7 +29,6 @@ What works now:
 
 What is still missing:
 - npm packaging
-- automated tests
 - data loading helpers
 - framework examples
 - configurable fab-specific ring definitions
@@ -154,7 +155,7 @@ Wafer metadata can include fields such as:
 
 ## Demos
 
-The richer wafer-ops demo is in [examples/basic-demo/index.html](/home/paul/projects/wmap/examples/basic-demo/index.html:1) and [examples/basic-demo/main.js](/home/paul/projects/wmap/examples/basic-demo/main.js:1).
+The showcase demo is in [examples/basic-demo/index.html](/home/paul/projects/wmap/examples/basic-demo/index.html:1) and [examples/basic-demo/main.js](/home/paul/projects/wmap/examples/basic-demo/main.js:1).
 
 Features shown there:
 - mode switching
@@ -168,7 +169,7 @@ Features shown there:
 - wafer metadata panel
 - total, pass, partial, ring, and quadrant stats
 
-There is also a slimmer consumer-style example in [examples/plotly-integration-demo/index.html](/home/paul/projects/wmap/examples/plotly-integration-demo/index.html:1) and [examples/plotly-integration-demo/main.js](/home/paul/projects/wmap/examples/plotly-integration-demo/main.js:1). Both demos now import the built package through an import map instead of copying the library code inline.
+There is also a slimmer integration recipe in [examples/plotly-integration-demo/index.html](/home/paul/projects/wmap/examples/plotly-integration-demo/index.html:1) and [examples/plotly-integration-demo/main.js](/home/paul/projects/wmap/examples/plotly-integration-demo/main.js:1). Both demos now import the built package through an import map instead of copying the library code inline.
 
 ### Running The Demos
 
@@ -185,7 +186,7 @@ Then open:
 http://127.0.0.1:8000/examples/basic-demo/
 ```
 
-For the package-consumer version, open:
+For the integration recipe, open:
 
 ```text
 http://127.0.0.1:8000/examples/plotly-integration-demo/
@@ -283,11 +284,11 @@ To turn this into a fully shareable wafer plot tool for Plotly users:
 
 ## Current Consumer Examples
 
-`examples/basic-demo/` is the most feature-rich consumer example:
+`examples/basic-demo/` is the showcase demo:
 - imports `wmap` from built output
 - exercises transforms, reticles, probe path, rings, quadrants, and richer controls
 
-`examples/plotly-integration-demo/` is the most compact consumer example:
+`examples/plotly-integration-demo/` is the integration recipe:
 - imports `wmap` from built output
 - loads wafer data in app code
 - builds a scene through the library

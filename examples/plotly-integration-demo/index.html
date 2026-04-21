@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>wmap Plotly Integration Demo</title>
+  <title>wmap Integration Recipe</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <script type="importmap">
     {
@@ -28,6 +28,23 @@
     }
     .hero {
       margin-bottom: 18px;
+      padding: 18px 20px;
+      border: 1px solid rgba(77, 60, 39, 0.14);
+      border-radius: 18px;
+      background: rgba(255, 252, 246, 0.72);
+      box-shadow: 0 10px 30px rgba(77, 60, 39, 0.08);
+    }
+    .eyebrow {
+      display: inline-block;
+      margin-bottom: 10px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: #342719;
+      color: #fff8ef;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 700;
     }
     .hero h1 {
       margin: 0 0 8px;
@@ -152,10 +169,12 @@
 <body>
   <div class="shell">
     <div class="hero">
-      <h1>Plotly Integration Demo</h1>
+      <span class="eyebrow">Integration Recipe</span>
+      <h1>Small App, Same Wafer Engine</h1>
       <p>
-        This example uses the built <code>wmap</code> package through an import map, fetches wafer data,
-        builds a renderer scene, and hands the result to Plotly without duplicating wafer geometry logic.
+        This example is intentionally smaller than the showcase demo. It uses the built <code>wmap</code>
+        package through an import map, loads wafer data in app code, builds a renderer scene, and hands the
+        result to Plotly without duplicating wafer geometry logic.
       </p>
     </div>
 
@@ -214,7 +233,7 @@
         </section>
 
         <p class="footnote">
-          This demo is intentionally small: the application owns data loading and UI, while wafer geometry,
+          Think of this as the recipe demo. The application owns data loading and UI, while wafer geometry,
           scene generation, and Plotly mapping stay inside <code>wmap</code>.
         </p>
       </aside>
