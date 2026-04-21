@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>wmap Plotly Integration Demo</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "wmap": "../../dist/index.js"
+      }
+    }
+  </script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", system-ui, sans-serif;
+      background:
+        radial-gradient(circle at top left, #f7f3ea 0%, #ece6d8 45%, #ddd4c0 100%);
+      color: #2f2417;
+    }
+    .shell {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .hero {
+      margin-bottom: 18px;
+    }
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: clamp(1.8rem, 4vw, 3rem);
+      line-height: 1;
+    }
+    .hero p {
+      margin: 0;
+      max-width: 720px;
+      color: #5b4934;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      padding: 14px 16px;
+      border: 1px solid rgba(77, 60, 39, 0.18);
+      border-radius: 16px;
+      background: rgba(255, 252, 246, 0.88);
+      backdrop-filter: blur(10px);
+      margin-bottom: 18px;
+    }
+    .group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .label {
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #7a6550;
+      font-weight: 700;
+    }
+    select, button {
+      border: 1px solid rgba(77, 60, 39, 0.2);
+      border-radius: 999px;
+      background: #fffdf8;
+      color: #342719;
+      padding: 8px 12px;
+      font: inherit;
+    }
+    button.active {
+      background: #342719;
+      color: #fff8ef;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 290px;
+      gap: 18px;
+    }
+    .chart-card, .info-card {
+      border: 1px solid rgba(77, 60, 39, 0.18);
+      border-radius: 18px;
+      background: rgba(255, 252, 246, 0.92);
+      box-shadow: 0 16px 40px rgba(77, 60, 39, 0.12);
+    }
+    .chart-card {
+      padding: 8px;
+      min-height: 720px;
+    }
+    #chart {
+      width: 100%;
+      height: 100%;
+      min-height: 700px;
+    }
+    .info-card {
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .info-card h2 {
+      margin: 0 0 8px;
+      font-size: 0.95rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #7a6550;
+    }
+    .meta-grid, .stats-grid {
+      display: grid;
+      gap: 8px;
+    }
+    .meta-row, .stats-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(77, 60, 39, 0.08);
+    }
+    .meta-row:last-child, .stats-row:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+    .meta-key, .stats-key {
+      color: #7a6550;
+      font-weight: 600;
+    }
+    .stats-value {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .footnote {
+      color: #7a6550;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+    @media (max-width: 980px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      .chart-card {
+        min-height: 560px;
+      }
+      #chart {
+        min-height: 540px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="hero">
+      <h1>Plotly Integration Demo</h1>
+      <p>
+        This example uses the built <code>wmap</code> package through an import map, fetches wafer data,
+        builds a renderer scene, and hands the result to Plotly without duplicating wafer geometry logic.
+      </p>
+    </div>
+
+    <div class="toolbar">
+      <div class="group">
+        <span class="label">Mode</span>
+        <select id="mode">
+          <option value="value">Value</option>
+          <option value="hardbin">Hard Bin</option>
+          <option value="softbin">Soft Bin</option>
+          <option value="stacked_values">Stacked Values</option>
+          <option value="stacked_bins">Stacked Bins</option>
+        </select>
+      </div>
+      <div class="group">
+        <span class="label">Overlays</span>
+        <button id="toggle-text" type="button">Labels</button>
+        <button id="toggle-rings" type="button">Rings</button>
+        <button id="toggle-quadrants" type="button">Quadrants</button>
+      </div>
+      <div class="group">
+        <span class="label">Rings</span>
+        <select id="ring-count">
+          <option value="3">3</option>
+          <option value="4" selected>4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="chart-card">
+        <div id="chart"></div>
+      </div>
+
+      <aside class="info-card">
+        <section>
+          <h2>Wafer Metadata</h2>
+          <div class="meta-grid" id="wafer-meta"></div>
+        </section>
+
+        <section>
+          <h2>Summary</h2>
+          <div class="stats-grid" id="summary-stats"></div>
+        </section>
+
+        <section>
+          <h2>Ring Stats</h2>
+          <div class="stats-grid" id="ring-stats"></div>
+        </section>
+
+        <section>
+          <h2>Quadrant Stats</h2>
+          <div class="stats-grid" id="quadrant-stats"></div>
+        </section>
+
+        <p class="footnote">
+          This demo is intentionally small: the application owns data loading and UI, while wafer geometry,
+          scene generation, and Plotly mapping stay inside <code>wmap</code>.
+        </p>
+      </aside>
+    </div>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

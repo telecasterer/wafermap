@@ -7,6 +7,7 @@ It is built around a clean split between wafer-domain logic and chart-library in
 - `packages/renderer`: converts wafer + dies into a renderer-agnostic scene made of rectangles, text, and overlays
 - `packages/plotly-adapter`: converts that scene into Plotly `data` + `layout`
 - `examples/basic-demo`: no-build browser demo using Plotly from CDN
+- `examples/plotly-integration-demo`: package-consumer demo using the built `wmap` output
 
 The goal is to make wafer plotting usable for web developers without pushing wafer geometry rules down into Plotly code.
 
@@ -165,6 +166,8 @@ Features shown there:
 - wafer metadata panel
 - total, pass, partial, ring, and quadrant stats
 
+There is also a consumer-style example in [examples/plotly-integration-demo/index.html](/home/paul/projects/wmap/examples/plotly-integration-demo/index.html:1) and [examples/plotly-integration-demo/main.js](/home/paul/projects/wmap/examples/plotly-integration-demo/main.js:1). That demo imports the built package through an import map and is the best current reference for how another web developer would actually use `wmap`.
+
 ### Running The Demo
 
 Use any static file server:
@@ -178,6 +181,12 @@ Then open:
 
 ```text
 http://127.0.0.1:8000/examples/basic-demo/
+```
+
+For the package-consumer version, open:
+
+```text
+http://127.0.0.1:8000/examples/plotly-integration-demo/
 ```
 
 ## Minimal Plotly Usage
@@ -274,17 +283,16 @@ To turn this into a fully shareable wafer plot tool for Plotly users:
 6. Add configurable ring breakpoints.
 7. Add small CSV / JSON data-loading helpers.
 
-## Suggested Next Demo
+## Current Best Consumer Example
 
-A strong next demo would be:
-- `examples/plotly-integration-demo/`
-- imports the package modules directly
-- loads a wafer dataset from JSON
-- builds a scene
+`examples/plotly-integration-demo/` is now the best reference for package-style usage:
+- imports `wmap` from built output
+- loads wafer data in app code
+- builds a scene through the library
 - renders with Plotly
-- shows how external UI controls can drive scene regeneration
+- keeps UI concerns outside the geometry/renderer layers
 
-That would make the project much easier to hand to another web developer and say “use this.”
+The next evolution from here would be a bundler-based app example such as Vite, React, or plain npm package consumption from outside this repo.
 
 ---
 
