@@ -12,6 +12,7 @@ It is built around a clean split between wafer-domain logic and chart-library in
 The goal is to make wafer plotting usable for web developers without pushing wafer geometry rules down into Plotly code.
 
 Detailed API documentation lives in [docs/API.md](/home/paul/projects/wmap/docs/API.md:1).
+Publishing notes and release checks live in [docs/PUBLISHING.md](/home/paul/projects/wmap/docs/PUBLISHING.md:1).
 
 ## Status
 
@@ -28,7 +29,7 @@ What works now:
 - Demo stats for total dies, pass rate, rings, and quadrants
 
 What is still missing:
-- npm packaging
+- npm publication
 - data loading helpers
 - framework examples
 - configurable fab-specific ring definitions
