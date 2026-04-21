@@ -1,0 +1,21 @@
+{
+  "name": "wmap",
+  "version": "0.1.0",
+  "description": "Browser-first wafer map visualization toolkit with a renderer abstraction and Plotly adapter.",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./index.ts",
+    "./core": "./packages/core/index.ts",
+    "./renderer": "./packages/renderer/index.ts",
+    "./plotly-adapter": "./packages/plotly-adapter/index.ts"
+  },
+  "sideEffects": false,
+  "keywords": [
+    "wafer",
+    "wafer-map",
+    "plotly",
+    "semiconductor",
+    "visualization"
+  ]
+}
