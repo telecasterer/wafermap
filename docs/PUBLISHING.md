@@ -18,7 +18,7 @@ npm run pack:check
 ```
 
 4. Inspect the tarball contents from `npm pack --dry-run` and confirm only the intended files ship.
-5. Review [readme.md](/home/paul/projects/wmap/readme.md:1) and [docs/API.md](/home/paul/projects/wmap/docs/API.md:1) for publish-facing clarity.
+5. Review [readme.md](../readme.md) and [docs/API.md](API.md) for publish-facing clarity.
 
 ## Local Packaging Check
 

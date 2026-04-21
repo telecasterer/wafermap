@@ -12,8 +12,9 @@ It is built around a clean split between wafer-domain logic and chart-library in
 
 The goal is to make wafer plotting usable for web developers without pushing wafer geometry rules down into Plotly code.
 
-Detailed API documentation lives in [docs/API.md](/home/paul/projects/wmap/docs/API.md:1).
-Publishing notes and release checks live in [docs/PUBLISHING.md](/home/paul/projects/wmap/docs/PUBLISHING.md:1).
+Detailed API documentation lives in [docs/API.md](docs/API.md).
+Publishing notes and release checks live in [docs/PUBLISHING.md](docs/PUBLISHING.md).
+A SvelteKit integration guide lives in [docs/SVELTEKIT.md](docs/SVELTEKIT.md).
 
 ## Status
 
@@ -162,7 +163,7 @@ Wafer metadata can include fields such as:
 
 ## Demos
 
-The showcase demo is in [examples/basic-demo/index.html](/home/paul/projects/wmap/examples/basic-demo/index.html:1) and [examples/basic-demo/main.js](/home/paul/projects/wmap/examples/basic-demo/main.js:1).
+The showcase demo is in [examples/basic-demo/index.html](examples/basic-demo/index.html) and [examples/basic-demo/main.js](examples/basic-demo/main.js).
 
 Features shown there:
 - mode switching
@@ -176,16 +177,16 @@ Features shown there:
 - wafer metadata panel
 - total, pass, partial, ring, and quadrant stats
 
-There is also a slimmer integration recipe in [examples/plotly-integration-demo/index.html](/home/paul/projects/wmap/examples/plotly-integration-demo/index.html:1) and [examples/plotly-integration-demo/main.js](/home/paul/projects/wmap/examples/plotly-integration-demo/main.js:1). Both demos now import the built package through an import map instead of copying the library code inline.
+There is also a slimmer integration recipe in [examples/plotly-integration-demo/index.html](examples/plotly-integration-demo/index.html) and [examples/plotly-integration-demo/main.js](examples/plotly-integration-demo/main.js). Both demos now import the built package through an import map instead of copying the library code inline.
 
-For a normal bundler workflow, there is also [examples/vite-demo/package.json](/home/paul/projects/wmap/examples/vite-demo/package.json:1) with source in [examples/vite-demo/src/main.js](/home/paul/projects/wmap/examples/vite-demo/src/main.js:1). That example consumes the local package as `wafermap` through a file dependency.
+For a normal bundler workflow, there is also [examples/vite-demo/package.json](examples/vite-demo/package.json) with source in [examples/vite-demo/src/main.js](examples/vite-demo/src/main.js). That example consumes the local package as `wafermap` through a file dependency.
 
 ### Running The Demos
 
 Use any static file server:
 
 ```bash
-cd /home/paul/projects/wmap
+cd wafermap
 python3 -m http.server 8000
 ```
 
@@ -204,7 +205,7 @@ http://127.0.0.1:8000/examples/plotly-integration-demo/
 For the Vite example:
 
 ```bash
-cd /home/paul/projects/wmap/examples/vite-demo
+cd wafermap/examples/vite-demo
 npm install
 npm run dev
 ```
@@ -318,4 +319,4 @@ To turn this into a fully shareable wafer plot tool for Plotly users:
 - uses Plotly inside a standard Vite app structure
 - shows how this should feel in a real web-dev workflow
 
-CI is defined in [ci.yml](/home/paul/projects/wmap/.github/workflows/ci.yml:1) and currently runs install, typecheck, test, and package dry-run checks.
+CI is defined in [.github/workflows/ci.yml](.github/workflows/ci.yml) and currently runs install, typecheck, test, and package dry-run checks.
