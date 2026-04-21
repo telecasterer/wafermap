@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>wmap v0.3</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+      background: #e8e8e8;
+      color: #333;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      padding: 16px;
+    }
+
+    h1 { font-size: 1rem; font-weight: 600; color: #444; letter-spacing: .02em; }
+
+    /* ── Toolbar ──────────────────────────────────────────── */
+    #toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      background: #fff;
+      padding: 8px 14px;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.1);
+      width: min(900px, 96vw);
+    }
+
+    .ctrl-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .ctrl-group + .ctrl-group {
+      padding-left: 10px;
+      border-left: 1px solid #ddd;
+    }
+
+    .ctrl-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: #888;
+      margin-right: 2px;
+    }
+
+    select {
+      padding: 4px 6px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      font-size: 12px;
+      background: #fafafa;
+      cursor: pointer;
+    }
+    select:focus { outline: none; border-color: #5b9cf6; }
+
+    button {
+      padding: 4px 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      font-size: 12px;
+      background: #fafafa;
+      cursor: pointer;
+      transition: background .12s;
+    }
+    button:hover  { background: #eee; }
+    button.active { background: #d0e4ff; border-color: #5b9cf6; color: #1a5fcc; font-weight: 600; }
+
+    #rot-badge {
+      display: inline-block;
+      min-width: 32px;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 600;
+      color: #555;
+    }
+
+    label.toggle {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      user-select: none;
+    }
+    label.toggle input[type=checkbox] { accent-color: #1a6eff; width: 14px; height: 14px; }
+
+    /* ── Main layout ──────────────────────────────────────── */
+    #main {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      width: min(900px, 96vw);
+    }
+
+    #chart {
+      flex: 1 1 auto;
+      min-width: 0;
+      aspect-ratio: 1;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.12);
+    }
+
+    /* ── Side panel ───────────────────────────────────────── */
+    #side {
+      flex: 0 0 170px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .panel {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.1);
+      padding: 10px 12px;
+    }
+
+    .panel h3 {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #888;
+      margin-bottom: 7px;
+      letter-spacing: .04em;
+    }
+
+    .kv-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .kv-table td { padding: 2px 0; vertical-align: top; }
+    .kv-table td:first-child { font-weight: 600; color: #666; width: 52%; padding-right: 4px; }
+    .kv-table td:last-child  { color: #222; }
+
+    .stat-value { font-size: 1.3em; font-weight: 700; color: #2c7be5; }
+    .stat-label { font-size: 11px; color: #888; }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .stat-cell { text-align: center; }
+
+    /* ── Bin legend ───────────────────────────────────────── */
+    .bin-legend { display: flex; flex-wrap: wrap; gap: 5px; }
+    .bin-swatch {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+    }
+    .bin-dot {
+      width: 10px; height: 10px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+
+<h1>wmap v0.3 — Wafer Map Visualization Engine</h1>
+
+<div id="toolbar">
+  <div class="ctrl-group">
+    <span class="ctrl-label">Mode</span>
+    <select id="sel-mode">
+      <option value="value">Test Value</option>
+      <option value="hardbin">Hard Bin</option>
+      <option value="softbin">Soft Bin</option>
+      <option value="stacked_values">Stacked Values</option>
+      <option value="stacked_bins">Stacked Bins</option>
+    </select>
+  </div>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">Rotate</span>
+    <button id="rot-left-btn">↺ −90°</button>
+    <span id="rot-badge">0°</span>
+    <button id="rot-right-btn">↻ +90°</button>
+  </div>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">Flip</span>
+    <button id="flipx-btn">⇿ H</button>
+    <button id="flipy-btn">↕ V</button>
+  </div>
+
+  <div class="ctrl-group">
+    <label class="toggle"><input type="checkbox" id="chk-text"> Labels</label>
+    <label class="toggle"><input type="checkbox" id="chk-reticle"> Reticle</label>
+    <label class="toggle"><input type="checkbox" id="chk-probe"> Probe path</label>
+    <label class="toggle"><input type="checkbox" id="chk-rings"> Rings</label>
+    <label class="toggle"><input type="checkbox" id="chk-quadrants"> Quadrants</label>
+  </div>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">Ring Count</span>
+    <select id="sel-rings">
+      <option value="3">3</option>
+      <option value="4" selected>4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+    </select>
+  </div>
+</div>
+
+<div id="main">
+  <div id="chart"></div>
+
+  <div id="side">
+
+    <div class="panel">
+      <h3>Wafer Info</h3>
+      <table class="kv-table">
+        <tr><td>Lot</td>     <td id="meta-lot">—</td></tr>
+        <tr><td>Wafer</td>   <td id="meta-wafer">—</td></tr>
+        <tr><td>Date</td>    <td id="meta-date">—</td></tr>
+        <tr><td>Program</td> <td id="meta-program">—</td></tr>
+        <tr><td>Temp</td>    <td id="meta-temp">—</td></tr>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h3>Statistics</h3>
+      <div class="stats-grid">
+        <div class="stat-cell">
+          <div class="stat-value" id="stat-dies">—</div>
+          <div class="stat-label">Total dies</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-value" id="stat-partial">—</div>
+          <div class="stat-label">Partial</div>
+        </div>
+        <div class="stat-cell" style="grid-column:1/-1">
+          <div class="stat-value" id="stat-pass">—</div>
+          <div class="stat-label">Bin 1 (pass)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Ring Stats</h3>
+      <table class="kv-table" id="ring-stats"></table>
+    </div>
+
+    <div class="panel">
+      <h3>Quadrant Stats</h3>
+      <table class="kv-table" id="quadrant-stats"></table>
+    </div>
+
+    <div class="panel">
+      <h3>Bin Legend</h3>
+      <div class="bin-legend">
+        <div class="bin-swatch"><div class="bin-dot" style="background:#2ecc71"></div> B1 Pass</div>
+        <div class="bin-swatch"><div class="bin-dot" style="background:#e74c3c"></div> B2 Fail</div>
+        <div class="bin-swatch"><div class="bin-dot" style="background:#f39c12"></div> B3 Marg.</div>
+        <div class="bin-swatch"><div class="bin-dot" style="background:#95a5a6"></div> N/A</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="main.js"></script>
+</body>
+</html>
