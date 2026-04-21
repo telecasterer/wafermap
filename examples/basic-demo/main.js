@@ -8,7 +8,7 @@ import {
   generateReticleGrid,
   buildScene,
   toPlotly,
-} from 'wmap';
+} from 'wafermap';
 
 const WAFER_META = {
   lot: 'LOT-XA2024',

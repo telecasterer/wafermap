@@ -1,6 +1,6 @@
 # Publishing Checklist
 
-This project now has the basic package structure needed for publishing, but it is not published yet.
+This project now has the basic package structure needed for publishing, but `wafermap` is not published yet.
 
 ## Before Publishing
 

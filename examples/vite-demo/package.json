@@ -1,0 +1,18 @@
+{
+  "name": "wafermap-vite-demo",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "plotly.js-dist-min": "^2.35.2",
+    "wafermap": "file:../.."
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  }
+}

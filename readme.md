@@ -1,13 +1,14 @@
-# wmap
+# wafermap
 
-`wmap` is a browser-first wafer map visualization toolkit for semiconductor data.
+`wafermap` is a browser-first wafer map visualization toolkit for semiconductor data.
 
 It is built around a clean split between wafer-domain logic and chart-library integration:
 - `packages/core`: wafer geometry, die generation, clipping, transforms, metadata
 - `packages/renderer`: converts wafer + dies into a renderer-agnostic scene made of rectangles, text, and overlays
 - `packages/plotly-adapter`: converts that scene into Plotly `data` + `layout`
 - `examples/basic-demo`: showcase demo with the richer controls and layout
-- `examples/plotly-integration-demo`: integration recipe demo using the built `wmap` output
+- `examples/plotly-integration-demo`: integration recipe demo using the built `wafermap` output
+- `examples/vite-demo`: bundler-based consumer example using Vite
 
 The goal is to make wafer plotting usable for web developers without pushing wafer geometry rules down into Plotly code.
 
@@ -27,6 +28,7 @@ What works now:
 - Centered die text overlays
 - Reticle, probe, ring, and quadrant overlays
 - Demo stats for total dies, pass rate, rings, and quadrants
+- CI workflow for build, test, and package dry-run validation
 
 What is still missing:
 - npm publication
@@ -58,6 +60,10 @@ examples/
   plotly-integration-demo/
     index.html
     main.js
+  vite-demo/
+    index.html
+    package.json
+    src/
 
 data/
   dummy-test.csv
@@ -172,6 +178,8 @@ Features shown there:
 
 There is also a slimmer integration recipe in [examples/plotly-integration-demo/index.html](/home/paul/projects/wmap/examples/plotly-integration-demo/index.html:1) and [examples/plotly-integration-demo/main.js](/home/paul/projects/wmap/examples/plotly-integration-demo/main.js:1). Both demos now import the built package through an import map instead of copying the library code inline.
 
+For a normal bundler workflow, there is also [examples/vite-demo/package.json](/home/paul/projects/wmap/examples/vite-demo/package.json:1) with source in [examples/vite-demo/src/main.js](/home/paul/projects/wmap/examples/vite-demo/src/main.js:1). That example consumes the local package as `wafermap` through a file dependency.
+
 ### Running The Demos
 
 Use any static file server:
@@ -191,6 +199,14 @@ For the integration recipe, open:
 
 ```text
 http://127.0.0.1:8000/examples/plotly-integration-demo/
+```
+
+For the Vite example:
+
+```bash
+cd /home/paul/projects/wmap/examples/vite-demo
+npm install
+npm run dev
 ```
 
 ## Minimal Plotly Usage
@@ -257,14 +273,14 @@ import {
   clipDiesToWafer,
   buildScene,
   toPlotly,
-} from 'wmap';
+} from 'wafermap';
 ```
 
 To get there, the next major steps are:
-- publish and document the package surface
-- add tests
-- add a bundler-based integration example
+- publish the package
+- expand test coverage
 - add data-loading helpers
+- add framework examples beyond vanilla Vite
 
 ## Current Issues
 
@@ -278,22 +294,28 @@ To get there, the next major steps are:
 To turn this into a fully shareable wafer plot tool for Plotly users:
 
 1. Publish the package or add a local tarball install flow.
-2. Add tests for clipping, transforms, scene generation, stacked rendering, and overlays.
-3. Add a bundler-based integration example aimed at a normal Plotly app.
-4. Add configurable ring breakpoints.
-5. Add small CSV / JSON data-loading helpers.
+2. Add more geometry edge-case tests, especially for flats and ring segmentation.
+3. Add configurable ring breakpoints.
+4. Add small CSV / JSON data-loading helpers.
+5. Add framework examples such as React.
 
 ## Current Consumer Examples
 
 `examples/basic-demo/` is the showcase demo:
-- imports `wmap` from built output
+- imports `wafermap` from built output
 - exercises transforms, reticles, probe path, rings, quadrants, and richer controls
 
 `examples/plotly-integration-demo/` is the integration recipe:
-- imports `wmap` from built output
+- imports `wafermap` from built output
 - loads wafer data in app code
 - builds a scene through the library
 - renders with Plotly
 - keeps UI concerns outside the geometry/renderer layers
 
-The next evolution from here would be a bundler-based app example such as Vite, React, or plain npm package consumption from outside this repo.
+`examples/vite-demo/` is the bundler consumer example:
+- installs `wafermap` as a local file dependency
+- imports it like a normal package
+- uses Plotly inside a standard Vite app structure
+- shows how this should feel in a real web-dev workflow
+
+CI is defined in [ci.yml](/home/paul/projects/wmap/.github/workflows/ci.yml:1) and currently runs install, typecheck, test, and package dry-run checks.

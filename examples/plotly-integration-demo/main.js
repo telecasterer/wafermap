@@ -5,7 +5,7 @@ import {
   applyOrientation,
   buildScene,
   toPlotly,
-} from 'wmap';
+} from 'wafermap';
 
 const state = {
   plotMode: 'value',

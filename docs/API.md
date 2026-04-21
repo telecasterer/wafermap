@@ -1,12 +1,12 @@
 # API Reference
 
-This document describes the current public API exposed by `wmap`.
+This document describes the current public API exposed by `wafermap`.
 
 The public package surface is exported from:
-- `wmap`
-- `wmap/core`
-- `wmap/renderer`
-- `wmap/plotly-adapter`
+- `wafermap`
+- `wafermap/core`
+- `wafermap/renderer`
+- `wafermap/plotly-adapter`
 
 ## Package Surface
 
@@ -24,15 +24,15 @@ import {
   clipDiesToWafer,
   buildScene,
   toPlotly,
-} from 'wmap';
+} from 'wafermap';
 ```
 
 Or module-specific imports:
 
 ```ts
-import { createWafer, generateDies } from 'wmap/core';
-import { buildScene } from 'wmap/renderer';
-import { toPlotly } from 'wmap/plotly-adapter';
+import { createWafer, generateDies } from 'wafermap/core';
+import { buildScene } from 'wafermap/renderer';
+import { toPlotly } from 'wafermap/plotly-adapter';
 ```
 
 ## Core
