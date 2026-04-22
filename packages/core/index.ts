@@ -1,3 +1,4 @@
+export * from './aggregates.js';
 export * from './classify.js';
 export * from './dies.js';
 export * from './metadata.js';

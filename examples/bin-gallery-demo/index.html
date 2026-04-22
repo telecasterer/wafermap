@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>wmap — Bin Gallery (Stacked Wafers)</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "wafermap": "../../dist/index.js"
+      }
+    }
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+      background: #e8e8e8;
+      color: #333;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      padding: 16px;
+    }
+
+    h1 { font-size: 1rem; font-weight: 600; color: #444; letter-spacing: .02em; }
+    p.subtitle { font-size: 12px; color: #888; margin-top: -6px; }
+
+    /* ── Toolbar ──────────────────────────────────────────── */
+    #toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      background: #fff;
+      padding: 8px 14px;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.1);
+      width: min(1100px, 96vw);
+    }
+
+    .ctrl-group { display: flex; align-items: center; gap: 5px; }
+    .ctrl-group + .ctrl-group { padding-left: 10px; border-left: 1px solid #ddd; }
+    .ctrl-label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: #888; }
+
+    select {
+      padding: 4px 6px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      font-size: 12px;
+      background: #fafafa;
+      cursor: pointer;
+    }
+
+    button {
+      padding: 4px 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      font-size: 12px;
+      background: #fafafa;
+      cursor: pointer;
+      transition: background .12s;
+    }
+    button:hover  { background: #eee; }
+    button.active { background: #d0e4ff; border-color: #5b9cf6; color: #1a5fcc; font-weight: 600; }
+
+    /* ── Gallery grid ─────────────────────────────────────── */
+    #gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px;
+      width: min(1100px, 96vw);
+    }
+
+    .bin-card {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.1);
+      overflow: hidden;
+    }
+
+    .bin-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 7px 10px 4px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .bin-title {
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .bin-subtitle {
+      font-size: 10px;
+      color: #999;
+    }
+
+    .bin-chart {
+      aspect-ratio: 1;
+      width: 100%;
+    }
+
+    .bin-footer {
+      padding: 4px 10px 6px;
+      font-size: 10px;
+      color: #aaa;
+      text-align: center;
+      border-top: 1px solid #f0f0f0;
+    }
+  </style>
+</head>
+<body>
+
+<h1>wafermap — Stacked Bin Gallery (LOT456, W01–W06)</h1>
+<p class="subtitle">Each map shows how many of the 6 wafers had that bin at each die position.</p>
+
+<div id="toolbar">
+  <div class="ctrl-group">
+    <span class="ctrl-label">Colour</span>
+    <select id="color-scheme">
+      <option value="color">Colour</option>
+      <option value="greyscale">Greyscale</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <button id="toggle-rings">Rings</button>
+  </div>
+</div>
+
+<div id="gallery"></div>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>
