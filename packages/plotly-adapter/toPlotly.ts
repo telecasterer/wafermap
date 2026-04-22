@@ -47,7 +47,7 @@ export function toPlotly(scene: Scene, options: ToPlotlyOptions = {}): PlotlyOut
   const defaultYLabel = diePitch && !showUnits ? 'Die Y' : 'Y';
   const xLabel = (axisLabels.x ?? defaultXLabel) + unitSuffix;
   const yLabel = (axisLabels.y ?? defaultYLabel) + unitSuffix;
-  const { rectangles, hoverPoints, texts, overlays, plotMode, colorScheme } = scene;
+  const { rectangles, hoverPoints, texts, overlays, plotMode, colorScheme, valueRange } = scene;
 
   const shapes = [
     ...rectangles.map((rectangle) => ({
@@ -95,11 +95,12 @@ export function toPlotly(scene: Scene, options: ToPlotlyOptions = {}): PlotlyOut
     const colorscale = colorScheme === 'greyscale'
       ? [[0, 'rgb(30,30,30)'], [1, 'rgb(230,230,230)']]
       : 'Viridis';
+    const [cmin, cmax] = valueRange ?? [0, 1];
     traces.push({
       type: 'scatter', mode: 'markers',
       x: [null], y: [null],
       marker: {
-        color: [0], colorscale, cmin: 0, cmax: 1,
+        color: [cmin], colorscale, cmin, cmax,
         showscale: true, colorbar: { title: { text: 'Value' }, x: 1.01, thickness: 14, len: 0.8 },
       },
       hoverinfo: 'skip', showlegend: false,

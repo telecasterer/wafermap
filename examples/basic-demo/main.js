@@ -12,25 +12,21 @@ import {
   toPlotly,
 } from 'wafermap';
 
-const WAFER_META = {
-  lot: 'LOT-XA2024',
-  waferNumber: 3,
-  testDate: '2026-04-21',
-  testProgram: 'PROG-V300-1',
-  temperature: 25,
-};
-
 const DIE_SIZE = { width: 10, height: 10 };
+const WAFER_DIAMETER = 150;
 
 const appState = {
   wafer: null,
   baseDies: [],
   currentDies: [],
   reticles: [],
+  allRows: [],
+  selectedWafer: 'W01',
   rotation: 0,
   flipX: false,
   flipY: false,
   plotMode: 'value',
+  valueChannel: 0,
   showText: false,
   showReticle: false,
   showProbePath: false,
@@ -43,63 +39,95 @@ const appState = {
 };
 
 async function main() {
+  appState.allRows = await loadCsv('../../data/dummy-fulldata.csv');
+  populateWaferSelector(appState.allRows);
+  loadWafer(appState.selectedWafer);
+  wireControls();
+}
+
+async function loadCsv(path) {
+  const response = await fetch(path);
+  const text = await response.text();
+  const [headerLine, ...lines] = text.trim().split(/\r?\n/);
+  const headers = headerLine.split(',');
+  return lines.filter(Boolean).map((line) => {
+    const values = line.split(',');
+    return Object.fromEntries(headers.map((header, index) => [header, values[index]]));
+  });
+}
+
+function populateWaferSelector(rows) {
+  const wafers = [...new Set(rows.map((row) => row.wafer))].sort();
+  const sel = document.getElementById('sel-wafer');
+  sel.innerHTML = wafers.map((w) => `<option value="${w}"${w === appState.selectedWafer ? ' selected' : ''}>${w}</option>`).join('');
+}
+
+function loadWafer(waferId) {
+  const rows = appState.allRows.filter((row) => row.wafer === waferId);
+  const firstRow = rows[0] ?? {};
+
+  const waferMeta = {
+    lot: firstRow.lot ?? '—',
+    waferNumber: Number(waferId.replace(/\D/g, '')),
+    testDate: firstRow.testdate ?? '—',
+    testProgram: 'PROG-V300-1',
+    temperature: Number(firstRow.temp ?? 25),
+  };
+
   const wafer = createWafer({
-    diameter: 300,
-    flat: { type: 'bottom', length: 40 },
+    diameter: WAFER_DIAMETER,
+    flat: { type: 'bottom', length: 30 },
     orientation: 0,
-    metadata: WAFER_META,
+    metadata: waferMeta,
   });
 
   const allDies = generateDies(wafer, DIE_SIZE);
   const clipped = clipDiesToWafer(allDies, wafer, DIE_SIZE);
-  const enriched = enrichDies(clipped, WAFER_META);
+  const enriched = enrichDiesFromRows(clipped, rows);
   const sequenced = applyProbeSequence(enriched, { type: 'snake' });
   const oriented = applyOrientation(sequenced, wafer);
 
   appState.wafer = wafer;
   appState.baseDies = oriented;
-  appState.reticles = generateReticleGrid(wafer, { width: 30, height: 30, stepX: 30, stepY: 60 });
+  appState.reticles = generateReticleGrid(wafer, { width: 30, height: 30, stepX: 30, stepY: 30 });
 
-  updateMetaPanel(WAFER_META);
-  wireControls();
+  updateMetaPanel(waferMeta);
   redraw();
 }
 
-function enrichDies(dies, waferMeta) {
+function enrichDiesFromRows(dies, rows) {
+  const rowMap = new Map(rows.map((row) => [`${Number(row.x)},${Number(row.y)}`, row]));
+
   return dies.map((die) => {
-    const radialDistance = Math.sqrt(die.i ** 2 + die.j ** 2);
-    const noise = Math.sin(die.i * 2.7 + die.j * 1.9) * 0.04;
-    const v1 = clamp01(1.0 - radialDistance * 0.052 + noise);
-    const v2 = clamp01(0.9 - radialDistance * 0.057 + noise * 0.8);
-    const v3 = clamp01(0.85 - radialDistance * 0.062 + noise * 0.6);
+    const row = rowMap.get(`${die.i},${die.j}`);
+    if (!row) {
+      return {
+        ...die,
+        values: [0],
+        bins: [0],
+        metadata: {},
+      };
+    }
 
     return {
       ...die,
-      values: [v1, v2, v3],
-      bins: [valueToBin(v1), valueToBin(v2), valueToBin(v3)],
+      values: [Number(row.testA), Number(row.testB), Number(row.testC)],
+      bins: [Number(row.hbin), Number(row.sbin)],
       metadata: {
-        lotId: waferMeta.lot,
-        waferId: `${waferMeta.lot}-W${String(waferMeta.waferNumber).padStart(2, '0')}`,
-        deviceType: 'WMAP-DEMO',
-        testProgram: waferMeta.testProgram,
-        temperature: waferMeta.temperature,
+        lotId: row.lot,
+        waferId: `${row.lot}-${row.wafer}`,
+        testDate: row.testdate,
+        temperature: row.temp,
         customFields: {
-          site: `${die.i}:${die.j}`,
-          radialBand: radialDistance.toFixed(2),
+          hbin: row.hbin,
+          sbin: row.sbin,
+          testA: row.testA,
+          testB: row.testB,
+          testC: row.testC,
         },
       },
     };
   });
-}
-
-function clamp01(value) {
-  return Math.max(0.01, Math.min(0.99, value));
-}
-
-function valueToBin(value) {
-  if (value >= 0.75) return 1;
-  if (value >= 0.5) return 2;
-  return 3;
 }
 
 function redraw() {
@@ -111,7 +139,16 @@ function redraw() {
 
   appState.currentDies = transformDies(appState.baseDies, interactiveTransform, appState.wafer.center);
 
-  const scene = buildScene(appState.wafer, appState.currentDies, appState.reticles, {
+  const diesForScene = appState.valueChannel === 0
+    ? appState.currentDies
+    : appState.currentDies.map((die) => {
+        const v = die.values ?? [];
+        const reordered = [...v];
+        reordered[0] = v[appState.valueChannel] ?? v[0];
+        return { ...die, values: reordered };
+      });
+
+  const scene = buildScene(appState.wafer, diesForScene, appState.reticles, {
     plotMode: appState.plotMode,
     showText: appState.showText,
     showReticle: appState.showReticle,
@@ -192,8 +229,18 @@ function renderStatsTable(targetId, rows) {
 }
 
 function wireControls() {
+  document.getElementById('sel-wafer').addEventListener('change', (event) => {
+    appState.selectedWafer = event.target.value;
+    loadWafer(appState.selectedWafer);
+  });
+
   document.getElementById('sel-mode').addEventListener('change', (event) => {
     appState.plotMode = event.target.value;
+    redraw();
+  });
+
+  document.getElementById('sel-channel').addEventListener('change', (event) => {
+    appState.valueChannel = Number(event.target.value);
     redraw();
   });
 
@@ -228,12 +275,12 @@ function wireControls() {
   });
 
   document.getElementById('rot-left-btn').addEventListener('click', () => {
-    appState.rotation = (appState.rotation - 90 + 360) % 360;
+    appState.rotation = (appState.rotation + 90) % 360;
     redraw();
   });
 
   document.getElementById('rot-right-btn').addEventListener('click', () => {
-    appState.rotation = (appState.rotation + 90) % 360;
+    appState.rotation = (appState.rotation - 90 + 360) % 360;
     redraw();
   });
 

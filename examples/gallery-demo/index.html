@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>wmap — Wafer Gallery</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "wafermap": "../../dist/index.js"
+      }
+    }
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+      background: #e8e8e8;
+      color: #333;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      padding: 16px;
+    }
+
+    h1 { font-size: 1rem; font-weight: 600; color: #444; letter-spacing: .02em; }
+
+    /* ── Toolbar ──────────────────────────────────────────── */
+    #toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      background: #fff;
+      padding: 8px 14px;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.1);
+      width: min(960px, 96vw);
+    }
+
+    .ctrl-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .ctrl-group + .ctrl-group {
+      padding-left: 10px;
+      border-left: 1px solid #ddd;
+    }
+
+    .ctrl-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: #888;
+      margin-right: 2px;
+    }
+
+    select {
+      padding: 4px 6px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      font-size: 12px;
+      background: #fafafa;
+      cursor: pointer;
+    }
+    select:focus { outline: none; border-color: #5b9cf6; }
+
+    button {
+      padding: 4px 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      font-size: 12px;
+      background: #fafafa;
+      cursor: pointer;
+      transition: background .12s;
+    }
+    button:hover  { background: #eee; }
+    button.active { background: #d0e4ff; border-color: #5b9cf6; color: #1a5fcc; font-weight: 600; }
+
+    /* ── Gallery grid ─────────────────────────────────────── */
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      width: min(960px, 96vw);
+    }
+
+    .wafer-card {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.1);
+      overflow: hidden;
+    }
+
+    .wafer-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 8px 12px 4px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .wafer-title {
+      font-weight: 700;
+      font-size: 13px;
+      color: #333;
+    }
+
+    .wafer-subtitle {
+      font-size: 11px;
+      color: #888;
+    }
+
+    .wafer-chart {
+      aspect-ratio: 1;
+      width: 100%;
+    }
+
+    .wafer-stats {
+      border-top: 1px solid #eee;
+      padding: 8px 12px;
+    }
+
+    .wafer-stats table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+
+    .wafer-stats td { padding: 1px 0; }
+    .wafer-stats td:first-child { color: #666; font-weight: 600; width: 50%; }
+    .wafer-stats td:last-child  { color: #222; }
+  </style>
+</head>
+<body>
+
+<h1>wafermap — LOT456 Gallery (W01–W04)</h1>
+
+<div id="toolbar">
+  <div class="ctrl-group">
+    <span class="ctrl-label">Mode</span>
+    <select id="mode">
+      <option value="hardbin" selected>Hard Bin</option>
+      <option value="value">Test A</option>
+      <option value="softbin">Soft Bin</option>
+      <option value="stacked_values">Stacked A/B/C</option>
+      <option value="stacked_bins">Stacked Bins</option>
+    </select>
+  </div>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">Colour</span>
+    <select id="color-scheme">
+      <option value="color">Colour</option>
+      <option value="greyscale">Greyscale</option>
+    </select>
+  </div>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">Ring Count</span>
+    <select id="ring-count">
+      <option value="3">3</option>
+      <option value="4" selected>4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+    </select>
+  </div>
+
+  <div class="ctrl-group">
+    <button id="toggle-rings">Rings</button>
+    <button id="toggle-quadrants">Quadrants</button>
+  </div>
+</div>
+
+<div class="gallery">
+
+  <div class="wafer-card">
+    <div class="wafer-header">
+      <span class="wafer-title">W01</span>
+      <span class="wafer-subtitle">LOT456 · 2026-04-01</span>
+    </div>
+    <div class="wafer-chart" id="chart-W01"></div>
+    <div class="wafer-stats"><table id="stats-W01"></table></div>
+  </div>
+
+  <div class="wafer-card">
+    <div class="wafer-header">
+      <span class="wafer-title">W02</span>
+      <span class="wafer-subtitle">LOT456 · 2026-04-01</span>
+    </div>
+    <div class="wafer-chart" id="chart-W02"></div>
+    <div class="wafer-stats"><table id="stats-W02"></table></div>
+  </div>
+
+  <div class="wafer-card">
+    <div class="wafer-header">
+      <span class="wafer-title">W03</span>
+      <span class="wafer-subtitle">LOT456 · 2026-04-01</span>
+    </div>
+    <div class="wafer-chart" id="chart-W03"></div>
+    <div class="wafer-stats"><table id="stats-W03"></table></div>
+  </div>
+
+  <div class="wafer-card">
+    <div class="wafer-header">
+      <span class="wafer-title">W04</span>
+      <span class="wafer-subtitle">LOT456 · 2026-04-01</span>
+    </div>
+    <div class="wafer-chart" id="chart-W04"></div>
+    <div class="wafer-stats"><table id="stats-W04"></table></div>
+  </div>
+
+</div>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>

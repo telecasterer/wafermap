@@ -61,6 +61,8 @@ export interface Scene {
   colorScheme: 'color' | 'greyscale';
   metadata: WaferMetadata | null;
   sourceDies: Die[];
+  /** Actual [min, max] of the value data used for color normalization. */
+  valueRange: [number, number];
 }
 
 export interface BuildSceneOptions {
@@ -76,6 +78,11 @@ export interface BuildSceneOptions {
   colorScheme?: 'color' | 'greyscale';
   highlightBin?: number;
   interactiveTransform?: { rotation?: number; flipX?: boolean; flipY?: boolean };
+  /**
+   * Explicit [min, max] for value colour normalization. When omitted the range
+   * is auto-computed from the die values present in the scene.
+   */
+  valueRange?: [number, number];
 }
 
 interface TransformState {
@@ -356,7 +363,8 @@ function pushDieRectangles(
   transform: TransformState,
   gap: number,
   colorFns: ColorFns,
-  highlightBin: number | undefined
+  highlightBin: number | undefined,
+  normalize: (v: number) => number
 ): void {
   const rw = die.width - gap;
   const rh = die.height - gap;
@@ -381,7 +389,7 @@ function pushDieRectangles(
 
   if (plotMode === 'value') {
     const value = die.values?.[0];
-    const fill = value !== undefined ? colorFns.forValue(value) : '#d6d9dd';
+    const fill = value !== undefined ? colorFns.forValue(normalize(value)) : '#d6d9dd';
     rectangles.push({
       x: die.x, y: die.y, width: rw, height: rh,
       fill, type: 'value', metadata: die.metadata,
@@ -436,7 +444,7 @@ function pushDieRectangles(
     rectangles.push({
       x: die.x + offset.x, y: die.y + offset.y,
       width: segmentWidth, height: rh,
-      fill: colorFns.forValue(value), type: 'stacked', stack: [...values], metadata: die.metadata,
+      fill: colorFns.forValue(normalize(value)), type: 'stacked', stack: [...values], metadata: die.metadata,
       path: rectanglePath({ x: die.x + offset.x, y: die.y + offset.y }, segmentWidth, rh, transform),
     });
   });
@@ -491,18 +499,42 @@ export function buildScene(
     colorScheme = 'color',
     highlightBin,
     interactiveTransform,
+    valueRange: explicitRange,
   } = options;
 
   const colorFns: ColorFns = colorScheme === 'greyscale'
     ? { forValue: valueToGreyscale, forHardBin: hardBinGreyscale, forSoftBin: (b) => valueToGreyscale(b / 6) }
     : { forValue: valueToViridis, forHardBin: hardBinColor, forSoftBin: softBinColor };
 
+  // Compute value range for normalization (used by value / stacked_values modes).
+  // For 'value' mode only values[0] is rendered — range against that channel only.
+  // For 'stacked_values' all channels are rendered side-by-side — range across all.
+  let vMin: number;
+  let vMax: number;
+  if (explicitRange) {
+    [vMin, vMax] = explicitRange;
+  } else {
+    let lo = Infinity, hi = -Infinity;
+    for (const die of dies) {
+      const vals = die.values ?? [];
+      const candidates = plotMode === 'stacked_values' ? vals : vals.slice(0, 1);
+      for (const v of candidates) {
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      }
+    }
+    vMin = isFinite(lo) ? lo : 0;
+    vMax = isFinite(hi) ? hi : 1;
+  }
+  if (vMin === vMax) vMax = vMin + 1;
+  const normalize = (v: number) => Math.max(0, Math.min(1, (v - vMin) / (vMax - vMin)));
+
   const transform = normalizeTransform(wafer, interactiveTransform);
   const rectangles: SceneRect[] = [];
   const hoverPoints: SceneHoverPoint[] = [];
 
   for (const die of dies) {
-    pushDieRectangles(rectangles, die, plotMode, transform, dieGap, colorFns, highlightBin);
+    pushDieRectangles(rectangles, die, plotMode, transform, dieGap, colorFns, highlightBin, normalize);
     hoverPoints.push({ x: die.x, y: die.y, text: buildHoverText(die) });
   }
 
@@ -524,5 +556,6 @@ export function buildScene(
     colorScheme,
     metadata: wafer.metadata ?? null,
     sourceDies: dies,
+    valueRange: [vMin, vMax],
   };
 }

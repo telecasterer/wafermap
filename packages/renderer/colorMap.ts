@@ -9,6 +9,12 @@ export const HARD_BIN_COLORS: readonly string[] = [
   '#1abc9c', // 6
   '#e67e22', // 7
   '#2c3e50', // 8
+  '#c0392b', // 9
+  '#8e44ad', // 10
+  '#2980b9', // 11
+  '#27ae60', // 12
+  '#d35400', // 13
+  '#16a085', // 14
 ];
 
 export function hardBinColor(bin: number): string {
@@ -53,6 +59,12 @@ export const HARD_BIN_GREY: readonly string[] = [
   '#999999', // 6
   '#555555', // 7
   '#444444', // 8
+  '#222222', // 9
+  '#cccccc', // 10
+  '#777777', // 11
+  '#eeeeee', // 12
+  '#333333', // 13
+  '#aaaaaa', // 14
 ];
 
 export function hardBinGreyscale(bin: number): string {

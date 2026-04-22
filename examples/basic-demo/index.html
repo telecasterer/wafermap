@@ -178,17 +178,31 @@
 </head>
 <body>
 
-<h1>wmap v0.3 — Wafer Map Visualization Engine</h1>
+<h1>wafermap v0.3 — Wafer Map Visualization Engine</h1>
 
 <div id="toolbar">
+  <div class="ctrl-group">
+    <span class="ctrl-label">Wafer</span>
+    <select id="sel-wafer"></select>
+  </div>
+
   <div class="ctrl-group">
     <span class="ctrl-label">Mode</span>
     <select id="sel-mode">
       <option value="value">Test Value</option>
       <option value="hardbin">Hard Bin</option>
       <option value="softbin">Soft Bin</option>
-      <option value="stacked_values">Stacked Values</option>
+      <option value="stacked_values">Stacked A/B/C</option>
       <option value="stacked_bins">Stacked Bins</option>
+    </select>
+  </div>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">Test</span>
+    <select id="sel-channel">
+      <option value="0">Test A</option>
+      <option value="1">Test B</option>
+      <option value="2">Test C</option>
     </select>
   </div>
 
@@ -236,9 +250,19 @@
     <span class="ctrl-label">Highlight</span>
     <select id="sel-highlight">
       <option value="0">None</option>
-      <option value="1">Bin 1</option>
       <option value="2">Bin 2</option>
       <option value="3">Bin 3</option>
+      <option value="4">Bin 4</option>
+      <option value="5">Bin 5</option>
+      <option value="6">Bin 6</option>
+      <option value="7">Bin 7</option>
+      <option value="8">Bin 8</option>
+      <option value="9">Bin 9</option>
+      <option value="10">Bin 10</option>
+      <option value="11">Bin 11</option>
+      <option value="12">Bin 12</option>
+      <option value="13">Bin 13</option>
+      <option value="14">Bin 14</option>
     </select>
   </div>
 </div>
@@ -290,9 +314,19 @@
     <div class="panel">
       <h3>Bin Legend</h3>
       <div class="bin-legend">
-        <div class="bin-swatch"><div class="bin-dot" style="background:#2ecc71"></div> B1 Pass</div>
-        <div class="bin-swatch"><div class="bin-dot" style="background:#e74c3c"></div> B2 Fail</div>
-        <div class="bin-swatch"><div class="bin-dot" style="background:#f39c12"></div> B3 Marg.</div>
+        <div class="bin-swatch"><div class="bin-dot" style="background:#e74c3c"></div> B2</div>
+        <div class="bin-swatch"><div class="bin-dot" style="background:#f39c12"></div> B3</div>
+        <div class="bin-swatch"><div class="bin-dot" style="background:#9b59b6"></div> B4</div>
+        <div class="bin-swatch"><div class="bin-dot" style="background:#3498db"></div> B5</div>
+        <div class="bin-swatch"><div class="bin-dot" style="background:#1abc9c"></div> B6</div>
+        <div class="bin-swatch"><div class="bin-dot" style="background:#e67e22"></div> B7</div>
+        <div class="bin-swatch"><div class="bin-dot" style="background:#2c3e50"></div> B8</div>
+        <div class="bin-swatch"><div class="bin-dot" style="background:#c0392b"></div> B9</div>
+        <div class="bin-swatch"><div class="bin-dot" style="background:#8e44ad"></div> B10</div>
+        <div class="bin-swatch"><div class="bin-dot" style="background:#2980b9"></div> B11</div>
+        <div class="bin-swatch"><div class="bin-dot" style="background:#27ae60"></div> B12</div>
+        <div class="bin-swatch"><div class="bin-dot" style="background:#d35400"></div> B13</div>
+        <div class="bin-swatch"><div class="bin-dot" style="background:#16a085"></div> B14</div>
         <div class="bin-swatch"><div class="bin-dot" style="background:#95a5a6"></div> N/A</div>
       </div>
     </div>
