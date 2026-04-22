@@ -1,15 +1,12 @@
 import {
-  createWafer,
-  generateDies,
-  clipDiesToWafer,
-  applyOrientation,
+  buildWaferMap,
   listColorSchemes,
   buildScene,
   toPlotly,
 } from 'wafermap';
 
-const DIE_SIZE = { width: 10, height: 10 };
-const WAFER_DIAMETER = 150;
+// Data file uses die-index x/y; multiply by pitch to get mm coordinates.
+const PITCH = 10;
 const WAFER_IDS = ['W01', 'W02', 'W03', 'W04'];
 
 const state = {
@@ -29,26 +26,54 @@ async function main() {
     const waferRows = rows.filter((row) => row.wafer === waferId);
     const firstRow = waferRows[0] ?? {};
 
-    const wafer = createWafer({
-      diameter: WAFER_DIAMETER,
-      flat: { type: 'bottom', length: 30 },
-      orientation: 0,
-      metadata: {
-        lot: firstRow.lot ?? 'LOT456',
-        waferNumber: Number(waferId.replace(/\D/g, '')),
-        testDate: firstRow.testdate ?? '—',
-        testProgram: 'PROG-V300-1',
-        temperature: Number(firstRow.temp ?? 25),
+    // Convert die-index x/y to mm coordinates for buildWaferMap.
+    const data = waferRows.map((row) => ({
+      x: Number(row.x) * PITCH,
+      y: Number(row.y) * PITCH,
+      bin: Number(row.hbin),
+      value: Number(row.testA),
+    }));
+
+    const result = buildWaferMap({
+      data,
+      wafer: {
+        diameter: 150,
+        flat: { type: 'bottom', length: 30 },
+        orientation: 0,
+        metadata: {
+          lot: firstRow.lot ?? 'LOT456',
+          waferNumber: Number(waferId.replace(/\D/g, '')),
+          testDate: firstRow.testdate ?? '—',
+          testProgram: 'PROG-V300-1',
+          temperature: Number(firstRow.temp ?? 25),
+        },
       },
+      die: { width: PITCH, height: PITCH },
     });
 
-    const generated = generateDies(wafer, DIE_SIZE);
-    const clipped = clipDiesToWafer(generated, wafer, DIE_SIZE);
-    const enriched = enrichDiesFromRows(clipped, waferRows);
-    const oriented = applyOrientation(enriched, wafer);
+    // buildWaferMap attaches one value (testA) and one bin (hbin).
+    // Post-enrich with additional test channels and softbin using the
+    // established i/j indices so stacked modes work correctly.
+    const rowMap = new Map(waferRows.map((row) => [`${row.x},${row.y}`, row]));
+    const dies = result.dies.map((die) => {
+      const row = rowMap.get(`${die.i},${die.j}`);
+      if (!row) return die;
+      return {
+        ...die,
+        values: [Number(row.testA), Number(row.testB), Number(row.testC)],
+        bins: [Number(row.hbin), Number(row.sbin)],
+        metadata: {
+          lotId: row.lot,
+          waferId: `${row.lot}-${row.wafer}`,
+          testDate: row.testdate,
+          temperature: row.temp,
+          customFields: { hbin: row.hbin, sbin: row.sbin },
+        },
+      };
+    });
 
-    state.wafers.push(wafer);
-    state.allDies[waferId] = oriented;
+    state.wafers.push(result.wafer);
+    state.allDies[waferId] = dies;
   }
 
   bindControls();
@@ -63,30 +88,6 @@ async function loadCsv(path) {
   return lines.filter(Boolean).map((line) => {
     const values = line.split(',');
     return Object.fromEntries(headers.map((header, index) => [header, values[index]]));
-  });
-}
-
-function enrichDiesFromRows(dies, rows) {
-  const rowMap = new Map(rows.map((row) => [`${Number(row.x)},${Number(row.y)}`, row]));
-
-  return dies.map((die) => {
-    const row = rowMap.get(`${die.i},${die.j}`);
-    if (!row) {
-      return { ...die, values: [0], bins: [0], metadata: {} };
-    }
-
-    return {
-      ...die,
-      values: [Number(row.testA), Number(row.testB), Number(row.testC)],
-      bins: [Number(row.hbin), Number(row.sbin)],
-      metadata: {
-        lotId: row.lot,
-        waferId: `${row.lot}-${row.wafer}`,
-        testDate: row.testdate,
-        temperature: row.temp,
-        customFields: { hbin: row.hbin, sbin: row.sbin },
-      },
-    };
   });
 }
 
