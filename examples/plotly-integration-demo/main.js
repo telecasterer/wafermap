@@ -3,6 +3,8 @@ import {
   generateDies,
   clipDiesToWafer,
   applyOrientation,
+  classifyDie,
+  getRingLabel,
   buildScene,
   toPlotly,
 } from 'wafermap';
@@ -12,7 +14,10 @@ const state = {
   showText: false,
   showRingBoundaries: false,
   showQuadrantBoundaries: false,
+  showAxes: true,
+  showUnits: false,
   ringCount: 4,
+  colorScheme: 'color',
   wafer: null,
   dies: [],
 };
@@ -82,7 +87,6 @@ function enrichDiesFromRows(dies, rows, waferMeta) {
         temperature: waferMeta.temperature,
         customFields: {
           source: row ? 'dummy-advanced.csv' : 'fallback',
-          ringHint: getRingDomainLabel(getRingIndex(die, state.wafer, state.ringCount) - 1, state.ringCount),
         },
       },
     };
@@ -126,6 +130,13 @@ function bindControls() {
   bindToggle('toggle-text', 'showText');
   bindToggle('toggle-rings', 'showRingBoundaries');
   bindToggle('toggle-quadrants', 'showQuadrantBoundaries');
+  bindToggle('toggle-axes', 'showAxes');
+  bindToggle('toggle-units', 'showUnits');
+
+  document.getElementById('color-scheme').addEventListener('change', (event) => {
+    state.colorScheme = event.target.value;
+    render();
+  });
 }
 
 function render() {
@@ -137,13 +148,18 @@ function render() {
     ringCount: state.ringCount,
     showRingBoundaries: state.showRingBoundaries,
     showQuadrantBoundaries: state.showQuadrantBoundaries,
+    colorScheme: state.colorScheme,
   });
 
-  const { data, layout } = toPlotly(scene);
+  const { data, layout } = toPlotly(scene, {
+    showAxes: state.showAxes,
+    showUnits: state.showUnits,
+    diePitch: { x: 10, y: 10 },
+  });
   Plotly.react('chart', data, {
     ...layout,
-    title: { text: 'wmap Package -> Scene -> Plotly', x: 0.03 },
-    margin: { t: 48, l: 10, r: 40, b: 10 },
+    title: { text: 'wmap Package → Scene → Plotly', x: 0.03 },
+    margin: { t: 48, l: state.showAxes ? 48 : 10, r: 40, b: state.showAxes ? 40 : 10 },
   }, { responsive: true });
 
   renderMetadata(scene.metadata);
@@ -156,12 +172,15 @@ function updateToggleStates() {
     ['toggle-text', state.showText],
     ['toggle-rings', state.showRingBoundaries],
     ['toggle-quadrants', state.showQuadrantBoundaries],
+    ['toggle-axes', state.showAxes],
+    ['toggle-units', state.showUnits],
   ]) {
     document.getElementById(id).classList.toggle('active', active);
   }
 
   document.getElementById('mode').value = state.plotMode;
   document.getElementById('ring-count').value = String(state.ringCount);
+  document.getElementById('color-scheme').value = state.colorScheme;
 }
 
 function renderMetadata(metadata) {
@@ -215,7 +234,7 @@ function renderStatsBlock(id, rows) {
 function summarizeSpatialStats(dies, wafer, ringCount) {
   const fullDies = dies.filter((die) => !die.partial);
   const ringStats = Array.from({ length: ringCount }, (_, index) => ({
-    label: getRingDomainLabel(index, ringCount),
+    label: getRingLabel(index + 1, ringCount),
     total: 0,
     pass: 0,
   }));
@@ -227,42 +246,14 @@ function summarizeSpatialStats(dies, wafer, ringCount) {
   const quadrantMap = new Map(quadrantStats.map((entry) => [entry.label, entry]));
 
   for (const die of fullDies) {
-    const ring = ringStats[getRingIndex(die, wafer, ringCount) - 1];
-    ring.total += 1;
-    if (die.bins?.[0] === 1) ring.pass += 1;
-
-    const quadrant = quadrantMap.get(getQuadrantLabel(die, wafer));
-    quadrant.total += 1;
-    if (die.bins?.[0] === 1) quadrant.pass += 1;
+    const { ring, quadrant } = classifyDie(die, wafer, { ringCount });
+    ringStats[ring - 1].total += 1;
+    if (die.bins?.[0] === 1) ringStats[ring - 1].pass += 1;
+    quadrantMap.get(quadrant).total += 1;
+    if (die.bins?.[0] === 1) quadrantMap.get(quadrant).pass += 1;
   }
 
   return { ringStats, quadrantStats };
-}
-
-function getRingIndex(die, wafer, ringCount) {
-  const dx = die.x - wafer.center.x;
-  const dy = die.y - wafer.center.y;
-  const normalized = Math.sqrt(dx * dx + dy * dy) / wafer.radius;
-  return Math.min(ringCount, Math.max(1, Math.floor(normalized * ringCount) + 1));
-}
-
-function getQuadrantLabel(die, wafer) {
-  const dx = die.x - wafer.center.x;
-  const dy = die.y - wafer.center.y;
-  if (dx >= 0 && dy >= 0) return 'NE';
-  if (dx < 0 && dy >= 0) return 'NW';
-  if (dx < 0 && dy < 0) return 'SW';
-  return 'SE';
-}
-
-function getRingDomainLabel(index, ringCount) {
-  if (ringCount === 1) return 'Full Wafer';
-  if (ringCount === 2) return index === 0 ? 'Core' : 'Edge';
-  if (ringCount === 3) return ['Core', 'Middle', 'Edge'][index];
-  if (ringCount === 4) return ['Core', 'Inner', 'Outer', 'Edge'][index];
-  if (index === 0) return 'Core';
-  if (index === ringCount - 1) return 'Edge';
-  return `Middle ${index}`;
 }
 
 function formatKey(key) {

@@ -211,6 +211,7 @@
     <label class="toggle"><input type="checkbox" id="chk-probe"> Probe path</label>
     <label class="toggle"><input type="checkbox" id="chk-rings"> Rings</label>
     <label class="toggle"><input type="checkbox" id="chk-quadrants"> Quadrants</label>
+    <label class="toggle"><input type="checkbox" id="chk-xy"> XY axes</label>
   </div>
 
   <div class="ctrl-group">
@@ -220,6 +221,24 @@
       <option value="4" selected>4</option>
       <option value="5">5</option>
       <option value="6">6</option>
+    </select>
+  </div>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">Colour</span>
+    <select id="sel-color">
+      <option value="color">Colour</option>
+      <option value="greyscale">Greyscale</option>
+    </select>
+  </div>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">Highlight</span>
+    <select id="sel-highlight">
+      <option value="0">None</option>
+      <option value="1">Bin 1</option>
+      <option value="2">Bin 2</option>
+      <option value="3">Bin 3</option>
     </select>
   </div>
 </div>

@@ -1,0 +1,41 @@
+import type { Wafer } from './wafer.js';
+import type { Die } from './dies.js';
+
+export type Quadrant = 'NE' | 'NW' | 'SW' | 'SE';
+
+export interface DieClassification {
+  ring: number;
+  quadrant: Quadrant;
+}
+
+export interface ClassifyOptions {
+  ringCount?: number;
+}
+
+/** Classify a die by its radial ring (1 = innermost) and screen quadrant. */
+export function classifyDie(die: Die, wafer: Wafer, options: ClassifyOptions = {}): DieClassification {
+  const ringCount = Math.max(1, options.ringCount ?? 4);
+  const dx = die.x - wafer.center.x;
+  const dy = die.y - wafer.center.y;
+  const normalized = Math.sqrt(dx * dx + dy * dy) / wafer.radius;
+  const ring = Math.min(ringCount, Math.max(1, Math.floor(normalized * ringCount) + 1));
+
+  let quadrant: Quadrant;
+  if (dx >= 0 && dy >= 0) quadrant = 'NE';
+  else if (dx < 0 && dy >= 0) quadrant = 'NW';
+  else if (dx < 0 && dy < 0) quadrant = 'SW';
+  else quadrant = 'SE';
+
+  return { ring, quadrant };
+}
+
+/** Human-readable label for a ring index (1-based) given a total ring count. */
+export function getRingLabel(ring: number, ringCount: number): string {
+  if (ringCount === 1) return 'Full Wafer';
+  if (ringCount === 2) return ring === 1 ? 'Core' : 'Edge';
+  if (ringCount === 3) return (['Core', 'Middle', 'Edge'])[ring - 1] ?? `Ring ${ring}`;
+  if (ringCount === 4) return (['Core', 'Inner', 'Outer', 'Edge'])[ring - 1] ?? `Ring ${ring}`;
+  if (ring === 1) return 'Core';
+  if (ring === ringCount) return 'Edge';
+  return `Middle ${ring - 1}`;
+}

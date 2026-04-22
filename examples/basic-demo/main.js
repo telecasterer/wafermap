@@ -6,6 +6,8 @@ import {
   transformDies,
   applyProbeSequence,
   generateReticleGrid,
+  classifyDie,
+  getRingLabel,
   buildScene,
   toPlotly,
 } from 'wafermap';
@@ -34,7 +36,10 @@ const appState = {
   showProbePath: false,
   showRingBoundaries: false,
   showQuadrantBoundaries: false,
+  showXYIndicator: false,
   ringCount: 4,
+  colorScheme: 'color',
+  highlightBin: undefined,
 };
 
 async function main() {
@@ -113,7 +118,10 @@ function redraw() {
     showProbePath: appState.showProbePath,
     showRingBoundaries: appState.showRingBoundaries,
     showQuadrantBoundaries: appState.showQuadrantBoundaries,
+    showXYIndicator: appState.showXYIndicator,
     ringCount: appState.ringCount,
+    colorScheme: appState.colorScheme,
+    highlightBin: appState.highlightBin,
     interactiveTransform,
   });
 
@@ -153,7 +161,7 @@ function updateMetaPanel(meta) {
 function summarizeSpatialStats(dies, wafer, ringCount) {
   const fullDies = dies.filter((die) => !die.partial);
   const ringStats = Array.from({ length: ringCount }, (_, index) => ({
-    label: getRingDomainLabel(index, ringCount),
+    label: getRingLabel(index + 1, ringCount),
     total: 0,
     pass: 0,
   }));
@@ -165,42 +173,14 @@ function summarizeSpatialStats(dies, wafer, ringCount) {
   const quadrantMap = new Map(quadrantStats.map((entry) => [entry.label, entry]));
 
   for (const die of fullDies) {
-    const ring = ringStats[getRingIndex(die, wafer, ringCount) - 1];
-    ring.total += 1;
-    if (die.bins?.[0] === 1) ring.pass += 1;
-
-    const quadrant = quadrantMap.get(getQuadrantLabel(die, wafer));
-    quadrant.total += 1;
-    if (die.bins?.[0] === 1) quadrant.pass += 1;
+    const { ring, quadrant } = classifyDie(die, wafer, { ringCount });
+    ringStats[ring - 1].total += 1;
+    if (die.bins?.[0] === 1) ringStats[ring - 1].pass += 1;
+    quadrantMap.get(quadrant).total += 1;
+    if (die.bins?.[0] === 1) quadrantMap.get(quadrant).pass += 1;
   }
 
   return { ringStats, quadrantStats };
-}
-
-function getRingIndex(die, wafer, ringCount) {
-  const dx = die.x - wafer.center.x;
-  const dy = die.y - wafer.center.y;
-  const normalized = Math.sqrt(dx * dx + dy * dy) / wafer.radius;
-  return Math.min(ringCount, Math.max(1, Math.floor(normalized * ringCount) + 1));
-}
-
-function getQuadrantLabel(die, wafer) {
-  const dx = die.x - wafer.center.x;
-  const dy = die.y - wafer.center.y;
-  if (dx >= 0 && dy >= 0) return 'NE';
-  if (dx < 0 && dy >= 0) return 'NW';
-  if (dx < 0 && dy < 0) return 'SW';
-  return 'SE';
-}
-
-function getRingDomainLabel(index, ringCount) {
-  if (ringCount === 1) return 'Full Wafer';
-  if (ringCount === 2) return index === 0 ? 'Core' : 'Edge';
-  if (ringCount === 3) return ['Core', 'Middle', 'Edge'][index];
-  if (ringCount === 4) return ['Core', 'Inner', 'Outer', 'Edge'][index];
-  if (index === 0) return 'Core';
-  if (index === ringCount - 1) return 'Edge';
-  return `Middle ${index}`;
 }
 
 function renderStatsTable(targetId, rows) {
@@ -223,6 +203,7 @@ function wireControls() {
     ['chk-probe', 'showProbePath'],
     ['chk-rings', 'showRingBoundaries'],
     ['chk-quadrants', 'showQuadrantBoundaries'],
+    ['chk-xy', 'showXYIndicator'],
   ]) {
     document.getElementById(id).addEventListener('change', (event) => {
       appState[key] = event.target.checked;
@@ -232,6 +213,17 @@ function wireControls() {
 
   document.getElementById('sel-rings').addEventListener('change', (event) => {
     appState.ringCount = Number(event.target.value) || 4;
+    redraw();
+  });
+
+  document.getElementById('sel-color').addEventListener('change', (event) => {
+    appState.colorScheme = event.target.value;
+    redraw();
+  });
+
+  document.getElementById('sel-highlight').addEventListener('change', (event) => {
+    const v = Number(event.target.value);
+    appState.highlightBin = v === 0 ? undefined : v;
     redraw();
   });
 

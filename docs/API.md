@@ -10,18 +10,14 @@ The public package surface is exported from:
 
 ## Package Surface
 
-Top-level exports currently include:
-- core wafer model and transform functions
-- renderer scene builders and color helpers
-- Plotly adapter helpers
-
-In practice, most consumers will want one of these import styles:
+Top-level exports include all of core, renderer, and plotly-adapter. Most consumers use one of these import styles:
 
 ```ts
 import {
   createWafer,
   generateDies,
   clipDiesToWafer,
+  classifyDie,
   buildScene,
   toPlotly,
 } from 'wafermap';
@@ -30,10 +26,12 @@ import {
 Or module-specific imports:
 
 ```ts
-import { createWafer, generateDies } from 'wafermap/core';
-import { buildScene } from 'wafermap/renderer';
+import { createWafer, generateDies, classifyDie } from 'wafermap/core';
+import { buildScene, hardBinColor, valueToViridis } from 'wafermap/renderer';
 import { toPlotly } from 'wafermap/plotly-adapter';
 ```
+
+---
 
 ## Core
 
@@ -41,31 +39,23 @@ import { toPlotly } from 'wafermap/plotly-adapter';
 
 Creates a wafer model.
 
-Input:
-
 ```ts
 {
   diameter: number
-  center?: { x: number; y: number }
+  center?: { x: number; y: number }          // default {0, 0}
   flat?: { type: 'top' | 'bottom' | 'left' | 'right'; length: number }
-  orientation?: number
+  orientation?: number                        // degrees, default 0
   metadata?: WaferMetadata
 }
 ```
 
-Returns a wafer object containing:
-- `diameter`
-- `radius`
-- `center`
-- `flat`
-- `orientation`
-- `metadata`
+Returns `Wafer` with `diameter`, `radius`, `center`, `flat`, `orientation`, `metadata`.
+
+---
 
 ### `generateDies(wafer, dieConfig)`
 
 Creates a rectangular die grid centered on the wafer.
-
-Input:
 
 ```ts
 {
@@ -76,71 +66,70 @@ Input:
 }
 ```
 
-Returns `Die[]` with:
-- `id`
-- `i`, `j`
-- `x`, `y`
-- `width`, `height`
+Returns `Die[]` with `id`, `i`, `j`, `x`, `y`, `width`, `height`.
+
+---
 
 ### `clipDiesToWafer(dies, wafer, dieConfig?)`
 
 Clips dies to the wafer boundary.
 
-Behavior:
-- removes dies entirely outside the wafer
-- marks included dies with `insideWafer: true`
-- marks straddling dies with `partial: true` when `dieConfig` is provided
+- Removes dies entirely outside the wafer.
+- Marks included dies with `insideWafer: true`.
+- Marks straddling dies with `partial: true` when `dieConfig` is provided (4-corner test).
+
+---
 
 ### `mapDataToDies(dies, data, options)`
 
-Maps row data onto dies.
-
-Supports:
-- `matchBy: 'xy'`
-- `matchBy: 'ij'`
-
-Primary use:
-- attach continuous values into `die.values`
-
-### `applyOrientation(dies, wafer)`
-
-Applies `wafer.orientation` to die coordinates.
-
-Use this after clipping and enrichment, before render-time transforms.
-
-### `transformDies(dies, options, center?)`
-
-Applies interactive display transforms.
-
-Input:
+Maps row data onto dies, attaching `values` and/or `bins`.
 
 ```ts
 {
-  rotation?: number
+  matchBy: 'xy' | 'ij'
+  valueField?: string
+  binField?: string
+}
+```
+
+---
+
+### `applyOrientation(dies, wafer)`
+
+Rotates die coordinates by `wafer.orientation` around `wafer.center`. Call once after clipping and enrichment, before render-time transforms.
+
+---
+
+### `transformDies(dies, options, center?)`
+
+Applies interactive display transforms (rotation + flip) around `center`.
+
+```ts
+{
+  rotation?: number   // degrees
   flipX?: boolean
   flipY?: boolean
 }
 ```
 
-Behavior:
-- rotation is around wafer center
-- flips are applied after rotation
+---
 
 ### `applyProbeSequence(dies, config)`
 
-Assigns `probeIndex` ordering.
+Assigns `probeIndex` to dies in the requested order.
 
-Supported types:
-- `row`
-- `column`
-- `snake`
-- `custom`
+Supported strategies:
+
+- `'row'`
+- `'column'`
+- `'snake'`
+- `'custom'` — provide `customOrder: string[]` (die IDs)
+
+---
 
 ### `generateReticleGrid(wafer, config)`
 
-Generates reticle rectangles covering the wafer.
-
-Input:
+Generates reticle rectangles covering the wafer area.
 
 ```ts
 {
@@ -154,23 +143,62 @@ Input:
 
 Returns `Reticle[]`.
 
+---
+
+### `classifyDie(die, wafer, options?)`
+
+Classifies a die by radial ring and screen quadrant.
+
+```ts
+options: { ringCount?: number }   // default 4
+```
+
+Returns:
+
+```ts
+{
+  ring: number       // 1 = innermost, ringCount = edge
+  quadrant: 'NE' | 'NW' | 'SW' | 'SE'
+}
+```
+
+Use this instead of implementing ring/quadrant logic in your app. The classification uses the die's current `x`/`y` display position, so it is orientation- and transform-aware.
+
+---
+
+### `getRingLabel(ring, ringCount)`
+
+Returns a human-readable label for a ring index:
+
+| ringCount | ring 1 | ring 2 | ring 3 | ring 4 |
+| --------- | ------ | ------ | ------ | ------ |
+| 1 | Full Wafer | — | — | — |
+| 2 | Core | Edge | — | — |
+| 3 | Core | Middle | Edge | — |
+| 4 | Core | Inner | Outer | Edge |
+| 5+ | Core | Middle N | … | Edge |
+
+---
+
 ## Renderer
 
 ### `buildScene(wafer, dies, reticles?, options?)`
 
-Builds the renderer-agnostic scene.
-
-Common options:
+Builds the renderer-agnostic scene. All options are optional.
 
 ```ts
-{
+interface BuildSceneOptions {
   plotMode?: 'value' | 'hardbin' | 'softbin' | 'stacked_values' | 'stacked_bins'
-  showText?: boolean
+  showText?: boolean               // die value/bin labels
   showReticle?: boolean
   showProbePath?: boolean
-  ringCount?: number
   showRingBoundaries?: boolean
   showQuadrantBoundaries?: boolean
+  showXYIndicator?: boolean        // +X / +Y orientation arrows
+  ringCount?: number               // default 4
+  dieGap?: number                  // kerf gap in mm, default 1
+  colorScheme?: 'color' | 'greyscale'   // default 'color'
+  highlightBin?: number            // dim all dies except this bin
   interactiveTransform?: {
     rotation?: number
     flipX?: boolean
@@ -179,68 +207,104 @@ Common options:
 }
 ```
 
-Returns a scene with:
-- `rectangles`
-- `texts`
-- `hoverPoints`
-- `overlays`
-- `plotMode`
-- `metadata`
-
-### `generateTextOverlay(dies, options)`
-
-Creates readable centered text labels for dies.
-
-Used internally by `buildScene`, but available as part of the renderer module.
-
-### Color Helpers
-
-Renderer color utilities:
-- `hardBinColor(bin)`
-- `softBinColor(bin, maxBin?)`
-- `valueToViridis(value)`
-- `contrastTextColor(cssColor)`
-
-## Plotly Adapter
-
-### `toPlotly(scene)`
-
-Converts a scene into Plotly-compatible output:
+Returns `Scene`:
 
 ```ts
 {
-  data: object[]
-  layout: object
+  rectangles: SceneRect[]
+  texts: SceneText[]
+  hoverPoints: SceneHoverPoint[]
+  overlays: SceneOverlay[]
+  plotMode: PlotMode
+  colorScheme: 'color' | 'greyscale'
+  metadata: WaferMetadata | null
+  sourceDies: Die[]               // parallel to hoverPoints — use for click callbacks
+}
+```
+
+`sourceDies` is populated in the same order as `hoverPoints`. In a Plotly click handler, `event.points[0].pointIndex` maps directly to `scene.sourceDies[pointIndex]`, giving you the original `Die` object for drill-down UIs.
+
+**Overlay kinds** produced by buildScene:
+`'wafer-boundary'`, `'reticle'`, `'probe-path'`, `'ring-boundary'`, `'quadrant-boundary'`, `'xy-indicator'`
+
+---
+
+### `generateTextOverlay(dies, options)`
+
+Generates `SceneText[]` labels for the given dies and plot mode. Used internally by `buildScene`, but exported for custom rendering pipelines.
+
+---
+
+### Color helpers
+
+| Function | Description |
+| -------- | ----------- |
+| `hardBinColor(bin)` | Categorical colour for hard bin index (0 = no data) |
+| `hardBinGreyscale(bin)` | Same, greyscale variant |
+| `softBinColor(bin, maxBin?)` | Maps bin to Viridis position |
+| `valueToViridis(t)` | Maps `t ∈ [0,1]` to Viridis RGB string |
+| `valueToGreyscale(t)` | Maps `t ∈ [0,1]` to grey RGB string (range 30–230) |
+| `contrastTextColor(cssColor)` | Returns `'#000000'` or `'#ffffff'` for WCAG contrast |
+
+Constants exported: `HARD_BIN_COLORS`, `HARD_BIN_GREY`, `VIRIDIS`.
+
+---
+
+## Plotly Adapter
+
+### `toPlotly(scene, options?)`
+
+Converts a scene into Plotly-compatible `{ data, layout }`.
+
+```ts
+interface ToPlotlyOptions {
+  showAxes?: boolean                    // default false — show axis ticks and titles
+  showUnits?: boolean                   // default false — append "(mm)" to axis titles
+  axisLabels?: { x?: string; y?: string }  // override axis titles (default "X" / "Y")
 }
 ```
 
 Behavior:
-- die rectangles become `layout.shapes` paths
-- overlays become `layout.shapes` paths
-- hover uses an invisible scatter trace
-- text uses a scatter text trace
-- continuous modes add a reference colorbar trace
+
+- Die rectangles → `layout.shapes` paths at `layer: 'below'`
+- Overlays → `layout.shapes` paths at `layer: 'above'`
+- Hover → invisible scatter trace (one point per die, indexed parallel to `scene.sourceDies`)
+- Text labels → scatter text trace (present when `scene.texts.length > 0`)
+- Continuous modes (`value`, `softbin`, `stacked_values`) → reference colorbar trace; colorscale switches to greyscale ramp when `scene.colorScheme === 'greyscale'`
+
+**Wiring Plotly click callbacks:**
+
+```js
+const scene = buildScene(wafer, dies, [], options);
+const { data, layout } = toPlotly(scene);
+Plotly.react('chart', data, layout);
+
+Plotly.on(document.getElementById('chart'), 'plotly_click', (event) => {
+  const die = scene.sourceDies[event.points[0].pointIndex];
+  // die.i, die.j, die.values, die.bins, die.metadata, etc.
+});
+```
+
+---
 
 ## Important Types
 
 ### `Die`
 
-The die model can include:
-
 ```ts
 {
   id: string
-  i: number
-  j: number
-  x: number
+  i: number                    // grid column index
+  j: number                    // grid row index
+  x: number                    // display coordinate (mm)
   y: number
   width: number
   height: number
-  values?: number[]
-  bins?: number[]
+  values?: number[]            // [0] = primary, range [0,1] for colour mapping
+  bins?: number[]              // [0] = primary hard bin
   metadata?: DieMetadata
   insideWafer?: boolean
-  partial?: boolean
+  partial?: boolean            // straddles wafer boundary
   probeIndex?: number
 }
 ```
@@ -267,21 +331,36 @@ The die model can include:
   testProgram?: string
   temperature?: number
   customFields?: Record<string, unknown>
+  [key: string]: unknown
 }
 ```
 
+### `DieClassification`
+
+```ts
+{
+  ring: number       // 1 = innermost ring
+  quadrant: 'NE' | 'NW' | 'SW' | 'SE'
+}
+```
+
+---
+
 ## Recommended Consumer Flow
 
-The intended flow is:
-
-1. Create wafer
-2. Generate dies
-3. Clip dies
-4. Attach values / bins / metadata
-5. Apply wafer orientation
-6. Apply interactive transforms when needed
-7. Build a scene
-8. Convert to Plotly
+```text
+createWafer(config)
+  → generateDies(wafer, dieConfig)
+  → clipDiesToWafer(dies, wafer, dieConfig)
+  → [app attaches values / bins / metadata to each die]
+  → applyProbeSequence(dies, config)      // optional
+  → applyOrientation(dies, wafer)
+  ↓  (at render time, on each redraw)
+  → transformDies(dies, interactiveTransform, wafer.center)
+  → buildScene(wafer, dies, reticles, options)   → Scene
+  → toPlotly(scene, options)                     → { data, layout }
+  → Plotly.react(el, data, layout)
+```
 
 Minimal example:
 
@@ -289,13 +368,23 @@ Minimal example:
 const wafer = createWafer({ diameter: 300 });
 const dies = generateDies(wafer, { width: 10, height: 10 });
 const clipped = clipDiesToWafer(dies, wafer, { width: 10, height: 10 });
-const scene = buildScene(wafer, clipped, [], { plotMode: 'hardbin' });
-const plot = toPlotly(scene);
+
+// enrich dies with your test data here
+
+const scene = buildScene(wafer, applyOrientation(clipped, wafer), [], {
+  plotMode: 'hardbin',
+  colorScheme: 'greyscale',
+  showXYIndicator: true,
+});
+
+const { data, layout } = toPlotly(scene, { showAxes: true, showUnits: true });
+Plotly.react('chart', data, layout, { responsive: true });
 ```
+
+---
 
 ## Current Limitations
 
-- The API is still evolving.
-- Some advanced wafer-domain conventions are not yet parameterized.
-- Ring segmentation currently uses equal-width radial bands.
-- Plotly types are not yet exposed as formal peer-typed interfaces.
+- Ring segmentation uses equal-width radial bands. Configurable breakpoints are planned.
+- Plotly types are not exposed as formal peer-typed interfaces.
+- No built-in CSV/ATDF data loaders yet (planned).

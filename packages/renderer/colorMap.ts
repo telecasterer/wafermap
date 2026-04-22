@@ -42,6 +42,29 @@ export function softBinColor(bin: number, maxBin = 6): string {
   return valueToViridis(bin / maxBin);
 }
 
+/** Categorical greyscale shades for hard bins. Index 0 = no data. */
+export const HARD_BIN_GREY: readonly string[] = [
+  '#aaaaaa', // 0: no data
+  '#f0f0f0', // 1: pass (lightest — clearly distinct)
+  '#303030', // 2: fail (darkest)
+  '#888888', // 3: marginal
+  '#bbbbbb', // 4
+  '#666666', // 5
+  '#999999', // 6
+  '#555555', // 7
+  '#444444', // 8
+];
+
+export function hardBinGreyscale(bin: number): string {
+  return HARD_BIN_GREY[Math.max(0, Math.min(bin, HARD_BIN_GREY.length - 1))];
+}
+
+/** Map t ∈ [0, 1] to a greyscale rgb string (range 30–230 to avoid pure black/white). */
+export function valueToGreyscale(t: number): string {
+  const v = Math.round(Math.max(0, Math.min(1, t)) * 200 + 30);
+  return `rgb(${v},${v},${v})`;
+}
+
 /** Return '#000000' or '#ffffff' for maximum contrast against the given colour. */
 export function contrastTextColor(cssColor: string): '#000000' | '#ffffff' {
   let r = 0, g = 0, b = 0;

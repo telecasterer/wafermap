@@ -3,6 +3,7 @@
 `wafermap` is a browser-first wafer map visualization toolkit for semiconductor data.
 
 It is built around a clean split between wafer-domain logic and chart-library integration:
+
 - `packages/core`: wafer geometry, die generation, clipping, transforms, metadata
 - `packages/renderer`: converts wafer + dies into a renderer-agnostic scene made of rectangles, text, and overlays
 - `packages/plotly-adapter`: converts that scene into Plotly `data` + `layout`
@@ -21,21 +22,29 @@ A SvelteKit integration guide lives in [docs/SVELTEKIT.md](docs/SVELTEKIT.md).
 Current status: working prototype / shareable architecture baseline
 
 What works now:
-- True rectangular die rendering
+
+- True rectangular die rendering with configurable kerf gap
 - Hard bin, soft bin, value, stacked bin, and stacked value modes
+- Greyscale colour scheme option for all plot modes
+- Bin highlight — dim all dies except a selected bin
 - Wafer clipping with partial die detection
 - Wafer orientation plus interactive rotate / flip transforms
 - Die metadata and wafer metadata flows
 - Centered die text overlays
 - Reticle, probe, ring, and quadrant overlays
-- Demo stats for total dies, pass rate, rings, and quadrants
+- XY orientation indicator (rotates with the wafer)
+- `classifyDie` / `getRingLabel` helpers for ring and quadrant stats
+- `scene.sourceDies` for Plotly click / hover callbacks with raw die data
+- Configurable axis display with optional mm unit suffix in the Plotly adapter
 - CI workflow for build, test, and package dry-run validation
 
 What is still missing:
+
 - npm publication
 - data loading helpers
-- framework examples
 - configurable fab-specific ring definitions
+- `aggregateDieValues` helper (mean / median collapse)
+- `bin_count` plot mode
 
 ## Project Layout
 
@@ -77,6 +86,7 @@ data/
 ### Core
 
 Core owns wafer-domain logic:
+
 - wafer creation
 - die grid generation
 - clipping
@@ -100,11 +110,14 @@ The renderer layer is the key abstraction.
   texts: SceneText[],
   hoverPoints: SceneHoverPoint[],
   overlays: SceneOverlay[],
-  metadata: WaferMetadata | null
+  colorScheme: 'color' | 'greyscale',
+  metadata: WaferMetadata | null,
+  sourceDies: Die[],
 }
 ```
 
 This layer decides:
+
 - which plot mode is active
 - how each die is filled
 - how stacked data splits a die rectangle
@@ -113,9 +126,10 @@ This layer decides:
 
 ### Plotly Adapter
 
-`toPlotly(scene)` is intentionally thin.
+`toPlotly(scene, options?)` is intentionally thin.
 
 It maps:
+
 - scene rectangles -> Plotly `layout.shapes`
 - scene overlays -> Plotly `layout.shapes`
 - hover -> invisible scatter trace
@@ -124,6 +138,7 @@ It maps:
 ## Plot Modes
 
 Supported plot modes:
+
 - `value`
 - `hardbin`
 - `softbin`
@@ -166,6 +181,7 @@ Wafer metadata can include fields such as:
 The showcase demo is in [examples/basic-demo/index.html](examples/basic-demo/index.html) and [examples/basic-demo/main.js](examples/basic-demo/main.js).
 
 Features shown there:
+
 - mode switching
 - rotate left / right
 - flip horizontal / vertical
@@ -173,6 +189,9 @@ Features shown there:
 - reticle toggle
 - probe toggle
 - ring and quadrant overlay toggles
+- XY indicator toggle
+- greyscale / colour scheme toggle
+- bin highlight selector
 - configurable ring count
 - wafer metadata panel
 - total, pass, partial, ring, and quadrant stats
@@ -215,11 +234,11 @@ npm run dev
 This is the intended flow for a web developer:
 
 ```js
-import { createWafer } from '../packages/core/wafer.js';
-import { generateDies } from '../packages/core/dies.js';
-import { clipDiesToWafer, applyOrientation, transformDies } from '../packages/core/transforms.js';
-import { buildScene } from '../packages/renderer/buildScene.js';
-import { toPlotly } from '../packages/plotly-adapter/toPlotly.js';
+import {
+  createWafer, generateDies, clipDiesToWafer,
+  applyOrientation, transformDies,
+  buildScene, toPlotly,
+} from 'wafermap';
 
 const wafer = createWafer({
   diameter: 300,
@@ -241,11 +260,7 @@ const enriched = clipped.map((die, idx) => ({
   ...die,
   bins: [idx % 3 === 0 ? 1 : 2],
   values: [Math.max(0, 1 - Math.abs(die.i) * 0.06 - Math.abs(die.j) * 0.05)],
-  metadata: {
-    lotId: 'LOT-42',
-    waferId: 'LOT-42-W07',
-    deviceType: 'DemoDevice',
-  },
+  metadata: { lotId: 'LOT-42', waferId: 'LOT-42-W07', deviceType: 'DemoDevice' },
 }));
 
 const oriented = applyOrientation(enriched, wafer);
@@ -256,10 +271,11 @@ const scene = buildScene(wafer, transformed, [], {
   showText: true,
   showRingBoundaries: true,
   showQuadrantBoundaries: true,
+  showXYIndicator: true,
   ringCount: 4,
 });
 
-const { data, layout } = toPlotly(scene);
+const { data, layout } = toPlotly(scene, { showAxes: true, showUnits: true });
 Plotly.react('chart', data, layout, { responsive: true });
 ```
 
@@ -278,6 +294,7 @@ import {
 ```
 
 To get there, the next major steps are:
+
 - publish the package
 - expand test coverage
 - add data-loading helpers
@@ -303,10 +320,12 @@ To turn this into a fully shareable wafer plot tool for Plotly users:
 ## Current Consumer Examples
 
 `examples/basic-demo/` is the showcase demo:
+
 - imports `wafermap` from built output
 - exercises transforms, reticles, probe path, rings, quadrants, and richer controls
 
 `examples/plotly-integration-demo/` is the integration recipe:
+
 - imports `wafermap` from built output
 - loads wafer data in app code
 - builds a scene through the library
@@ -314,6 +333,7 @@ To turn this into a fully shareable wafer plot tool for Plotly users:
 - keeps UI concerns outside the geometry/renderer layers
 
 `examples/vite-demo/` is the bundler consumer example:
+
 - installs `wafermap` as a local file dependency
 - imports it like a normal package
 - uses Plotly inside a standard Vite app structure

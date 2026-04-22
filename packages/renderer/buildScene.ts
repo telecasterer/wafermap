@@ -3,7 +3,12 @@ import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
 import type { DieMetadata, WaferMetadata } from '../core/metadata.js';
 import { rotatePoint } from '../core/transforms.js';
-import { hardBinColor, softBinColor, valueToViridis, contrastTextColor } from './colorMap.js';
+import {
+  hardBinColor, hardBinGreyscale,
+  softBinColor,
+  valueToViridis, valueToGreyscale,
+  contrastTextColor,
+} from './colorMap.js';
 
 export type PlotMode = 'value' | 'hardbin' | 'softbin' | 'stacked_values' | 'stacked_bins';
 
@@ -40,7 +45,7 @@ export interface SceneHoverPoint {
 }
 
 export interface SceneOverlay {
-  kind: 'wafer-boundary' | 'wafer-flat' | 'reticle' | 'probe-path' | 'ring-boundary' | 'quadrant-boundary';
+  kind: 'wafer-boundary' | 'wafer-flat' | 'reticle' | 'probe-path' | 'ring-boundary' | 'quadrant-boundary' | 'xy-indicator';
   path: string;
   lineColor: string;
   lineWidth: number;
@@ -53,7 +58,9 @@ export interface Scene {
   texts: SceneText[];
   overlays: SceneOverlay[];
   plotMode: PlotMode;
+  colorScheme: 'color' | 'greyscale';
   metadata: WaferMetadata | null;
+  sourceDies: Die[];
 }
 
 export interface BuildSceneOptions {
@@ -64,6 +71,10 @@ export interface BuildSceneOptions {
   ringCount?: number;
   showRingBoundaries?: boolean;
   showQuadrantBoundaries?: boolean;
+  showXYIndicator?: boolean;
+  dieGap?: number;
+  colorScheme?: 'color' | 'greyscale';
+  highlightBin?: number;
   interactiveTransform?: { rotation?: number; flipX?: boolean; flipY?: boolean };
 }
 
@@ -73,7 +84,14 @@ interface TransformState {
   flipY: boolean;
 }
 
+interface ColorFns {
+  forValue: (t: number) => string;
+  forHardBin: (bin: number) => string;
+  forSoftBin: (bin: number) => string;
+}
+
 const PARTIAL_DIE_FILL = '#d3d6db';
+const DIM_FILL = '#e8e9ea';
 
 function normalizeTransform(
   wafer: Wafer,
@@ -335,34 +353,39 @@ function pushDieRectangles(
   rectangles: SceneRect[],
   die: Die,
   plotMode: PlotMode,
-  transform: TransformState
+  transform: TransformState,
+  gap: number,
+  colorFns: ColorFns,
+  highlightBin: number | undefined
 ): void {
+  const rw = die.width - gap;
+  const rh = die.height - gap;
+
   if (die.partial) {
     rectangles.push({
-      x: die.x,
-      y: die.y,
-      width: die.width,
-      height: die.height,
-      fill: PARTIAL_DIE_FILL,
-      type: 'stacked',
-      metadata: die.metadata,
-      path: rectanglePath(die, die.width, die.height, transform),
+      x: die.x, y: die.y, width: rw, height: rh,
+      fill: PARTIAL_DIE_FILL, type: 'stacked', metadata: die.metadata,
+      path: rectanglePath(die, rw, rh, transform),
+    });
+    return;
+  }
+
+  if (highlightBin !== undefined && die.bins?.[0] !== highlightBin) {
+    rectangles.push({
+      x: die.x, y: die.y, width: rw, height: rh,
+      fill: DIM_FILL, type: 'hardbin', metadata: die.metadata,
+      path: rectanglePath(die, rw, rh, transform),
     });
     return;
   }
 
   if (plotMode === 'value') {
     const value = die.values?.[0];
-    const fill = value !== undefined ? valueToViridis(value) : '#d6d9dd';
+    const fill = value !== undefined ? colorFns.forValue(value) : '#d6d9dd';
     rectangles.push({
-      x: die.x,
-      y: die.y,
-      width: die.width,
-      height: die.height,
-      fill,
-      type: 'value',
-      metadata: die.metadata,
-      path: rectanglePath(die, die.width, die.height, transform),
+      x: die.x, y: die.y, width: rw, height: rh,
+      fill, type: 'value', metadata: die.metadata,
+      path: rectanglePath(die, rw, rh, transform),
     });
     return;
   }
@@ -370,14 +393,9 @@ function pushDieRectangles(
   if (plotMode === 'hardbin') {
     const bin = die.bins?.[0] ?? 0;
     rectangles.push({
-      x: die.x,
-      y: die.y,
-      width: die.width,
-      height: die.height,
-      fill: hardBinColor(bin),
-      type: 'hardbin',
-      metadata: die.metadata,
-      path: rectanglePath(die, die.width, die.height, transform),
+      x: die.x, y: die.y, width: rw, height: rh,
+      fill: colorFns.forHardBin(bin), type: 'hardbin', metadata: die.metadata,
+      path: rectanglePath(die, rw, rh, transform),
     });
     return;
   }
@@ -385,58 +403,73 @@ function pushDieRectangles(
   if (plotMode === 'softbin') {
     const bin = die.bins?.[0] ?? 0;
     rectangles.push({
-      x: die.x,
-      y: die.y,
-      width: die.width,
-      height: die.height,
-      fill: softBinColor(bin),
-      type: 'softbin',
-      metadata: die.metadata,
-      path: rectanglePath(die, die.width, die.height, transform),
+      x: die.x, y: die.y, width: rw, height: rh,
+      fill: colorFns.forSoftBin(bin), type: 'softbin', metadata: die.metadata,
+      path: rectanglePath(die, rw, rh, transform),
     });
     return;
   }
 
   if (plotMode === 'stacked_bins') {
     const bins = die.bins?.length ? die.bins : [0];
-    const segmentWidth = die.width / bins.length;
+    const segmentWidth = rw / bins.length;
 
     bins.forEach((bin, index) => {
-      const localX = -die.width / 2 + segmentWidth * (index + 0.5);
+      const localX = -rw / 2 + segmentWidth * (index + 0.5);
       const offset = transformVector(localX, 0, transform);
       rectangles.push({
-        x: die.x + offset.x,
-        y: die.y + offset.y,
-        width: segmentWidth,
-        height: die.height,
-        fill: hardBinColor(bin),
-        type: 'stacked',
-        stack: [...bins],
-        metadata: die.metadata,
-        path: rectanglePath({ x: die.x + offset.x, y: die.y + offset.y }, segmentWidth, die.height, transform),
+        x: die.x + offset.x, y: die.y + offset.y,
+        width: segmentWidth, height: rh,
+        fill: colorFns.forHardBin(bin), type: 'stacked', stack: [...bins], metadata: die.metadata,
+        path: rectanglePath({ x: die.x + offset.x, y: die.y + offset.y }, segmentWidth, rh, transform),
       });
     });
     return;
   }
 
   const values = die.values?.length ? die.values : [0];
-  const segmentWidth = die.width / values.length;
+  const segmentWidth = rw / values.length;
 
   values.forEach((value, index) => {
-    const localX = -die.width / 2 + segmentWidth * (index + 0.5);
+    const localX = -rw / 2 + segmentWidth * (index + 0.5);
     const offset = transformVector(localX, 0, transform);
     rectangles.push({
-      x: die.x + offset.x,
-      y: die.y + offset.y,
-      width: segmentWidth,
-      height: die.height,
-      fill: valueToViridis(value),
-      type: 'stacked',
-      stack: [...values],
-      metadata: die.metadata,
-      path: rectanglePath({ x: die.x + offset.x, y: die.y + offset.y }, segmentWidth, die.height, transform),
+      x: die.x + offset.x, y: die.y + offset.y,
+      width: segmentWidth, height: rh,
+      fill: colorFns.forValue(value), type: 'stacked', stack: [...values], metadata: die.metadata,
+      path: rectanglePath({ x: die.x + offset.x, y: die.y + offset.y }, segmentWidth, rh, transform),
     });
   });
+}
+
+function buildXYIndicatorOverlay(
+  wafer: Wafer,
+  transform: TransformState,
+  texts: SceneText[]
+): SceneOverlay[] {
+  // Anchor is fixed at the bottom-left corner in data space (outside the wafer circle).
+  // 0.9 per axis → distance ≈ 1.27 × radius: outside the circle but inside the chart area.
+  // Do NOT transform the anchor — it stays in the corner regardless of wafer rotation/flip.
+  // Only the arrow directions rotate, so they still correctly indicate the data axes.
+  const len = wafer.radius * 0.15;
+  const anchor = {
+    x: wafer.center.x - wafer.radius * 0.9,
+    y: wafer.center.y - wafer.radius * 0.9,
+  };
+  const xDir = transformVector(len, 0, transform);
+  const yDir = transformVector(0, len, transform);
+  const xTip = { x: anchor.x + xDir.x, y: anchor.y + xDir.y };
+  const yTip = { x: anchor.x + yDir.x, y: anchor.y + yDir.y };
+
+  texts.push(
+    { x: xTip.x + xDir.x * 0.35, y: xTip.y + xDir.y * 0.35, text: '+X', fontSize: 10, color: '#cc3300', align: 'center' },
+    { x: yTip.x + yDir.x * 0.35, y: yTip.y + yDir.y * 0.35, text: '+Y', fontSize: 10, color: '#0044cc', align: 'center' },
+  );
+
+  return [
+    { kind: 'xy-indicator', path: polylinePath([anchor, xTip]), lineColor: '#cc3300', lineWidth: 2 },
+    { kind: 'xy-indicator', path: polylinePath([anchor, yTip]), lineColor: '#0044cc', lineWidth: 2 },
+  ];
 }
 
 export function buildScene(
@@ -453,25 +486,34 @@ export function buildScene(
     ringCount = 4,
     showRingBoundaries = false,
     showQuadrantBoundaries = false,
+    showXYIndicator = false,
+    dieGap = 1,
+    colorScheme = 'color',
+    highlightBin,
     interactiveTransform,
   } = options;
+
+  const colorFns: ColorFns = colorScheme === 'greyscale'
+    ? { forValue: valueToGreyscale, forHardBin: hardBinGreyscale, forSoftBin: (b) => valueToGreyscale(b / 6) }
+    : { forValue: valueToViridis, forHardBin: hardBinColor, forSoftBin: softBinColor };
 
   const transform = normalizeTransform(wafer, interactiveTransform);
   const rectangles: SceneRect[] = [];
   const hoverPoints: SceneHoverPoint[] = [];
 
   for (const die of dies) {
-    pushDieRectangles(rectangles, die, plotMode, transform);
+    pushDieRectangles(rectangles, die, plotMode, transform, dieGap, colorFns, highlightBin);
     hoverPoints.push({ x: die.x, y: die.y, text: buildHoverText(die) });
   }
 
-  const texts = showText ? generateTextOverlay(dies, { plotMode }) : [];
+  const texts: SceneText[] = showText ? generateTextOverlay(dies, { plotMode }) : [];
   const overlays = buildBoundaryOverlay(wafer, transform);
 
   if (showRingBoundaries) overlays.push(...buildRingOverlays(wafer, transform, ringCount));
   if (showQuadrantBoundaries) overlays.push(...buildQuadrantOverlays(wafer, transform));
   if (showReticle) overlays.push(...buildReticleOverlays(reticles, wafer, transform));
   if (showProbePath) overlays.push(...buildProbeOverlay(dies));
+  if (showXYIndicator) overlays.push(...buildXYIndicatorOverlay(wafer, transform, texts));
 
   return {
     rectangles,
@@ -479,6 +521,8 @@ export function buildScene(
     texts,
     overlays,
     plotMode,
+    colorScheme,
     metadata: wafer.metadata ?? null,
+    sourceDies: dies,
   };
 }
