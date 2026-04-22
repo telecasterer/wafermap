@@ -5,6 +5,7 @@ import {
   applyOrientation,
   getUniqueBins,
   aggregateBinCounts,
+  listColorSchemes,
   buildScene,
   toPlotly,
 } from 'wafermap';
@@ -125,7 +126,12 @@ function updateToggleStates() {
 }
 
 function bindControls() {
-  document.getElementById('color-scheme').addEventListener('change', (e) => {
+  const colorSel = document.getElementById('color-scheme');
+  colorSel.innerHTML = listColorSchemes()
+    .filter(({ name }) => name !== 'color')
+    .map(({ name, label }) => `<option value="${name}"${name === state.colorScheme ? ' selected' : ''}>${label}</option>`)
+    .join('');
+  colorSel.addEventListener('change', (e) => {
     state.colorScheme = e.target.value;
     renderAll();
   });

@@ -8,6 +8,7 @@ import {
   generateReticleGrid,
   classifyDie,
   getRingLabel,
+  getColorScheme,
   listColorSchemes,
   buildScene,
   toPlotly,
@@ -168,6 +169,17 @@ function redraw() {
   updateUI();
 }
 
+function renderBinLegend() {
+  const scheme = getColorScheme(appState.colorScheme);
+  const dies = appState.currentDies;
+  const bins = [...new Set(dies.map((d) => d.bins?.[0]).filter((b) => b !== undefined))].sort((a, b) => a - b);
+  document.getElementById('bin-legend').innerHTML = bins.map((bin) =>
+    `<div class="bin-swatch">
+      <div class="bin-dot" style="background:${scheme.forBin(bin)}"></div> B${bin}
+    </div>`
+  ).join('');
+}
+
 function updateUI() {
   document.getElementById('rot-badge').textContent = `${appState.rotation}°`;
   document.getElementById('flipx-btn').classList.toggle('active', appState.flipX);
@@ -185,6 +197,7 @@ function updateUI() {
   const spatial = summarizeSpatialStats(dies, appState.wafer, appState.ringCount);
   renderStatsTable('ring-stats', spatial.ringStats);
   renderStatsTable('quadrant-stats', spatial.quadrantStats);
+  renderBinLegend();
 }
 
 function updateMetaPanel(meta) {

@@ -5,6 +5,7 @@ import {
   applyOrientation,
   classifyDie,
   getRingLabel,
+  listColorSchemes,
   buildScene,
   toPlotly,
 } from 'wafermap';
@@ -117,7 +118,12 @@ function bindControls() {
   bindToggle('toggle-axes', 'showAxes');
   bindToggle('toggle-units', 'showUnits');
 
-  document.getElementById('color-scheme').addEventListener('change', (event) => {
+  const colorSel = document.getElementById('color-scheme');
+  colorSel.innerHTML = listColorSchemes()
+    .filter(({ name }) => name !== 'color')
+    .map(({ name, label }) => `<option value="${name}"${name === state.colorScheme ? ' selected' : ''}>${label}</option>`)
+    .join('');
+  colorSel.addEventListener('change', (event) => {
     state.colorScheme = event.target.value;
     render();
   });

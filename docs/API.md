@@ -1,6 +1,6 @@
 # API Reference
 
-This document describes the current public API exposed by `wafermap`.
+This document describes the public API exposed by `wafermap`.
 
 The public package surface is exported from:
 - `wafermap`
@@ -8,33 +8,222 @@ The public package surface is exported from:
 - `wafermap/renderer`
 - `wafermap/plotly-adapter`
 
-## Package Surface
+---
 
-Top-level exports include all of core, renderer, and plotly-adapter. Most consumers use one of these import styles:
-
-```ts
-import {
-  createWafer,
-  generateDies,
-  clipDiesToWafer,
-  classifyDie,
-  aggregateBinCounts,
-  buildScene,
-  toPlotly,
-} from 'wafermap';
-```
-
-Or module-specific imports:
+## Quick Start
 
 ```ts
-import { createWafer, generateDies, classifyDie } from 'wafermap/core';
-import { buildScene, hardBinColor, valueToViridis } from 'wafermap/renderer';
-import { toPlotly } from 'wafermap/plotly-adapter';
+import { buildWaferMap, toPlotly } from 'wafermap';
+
+const result = buildWaferMap([
+  { x: 10, y: 20, value: 0.95 },
+  { x: 20, y: 20, value: 0.87 },
+]);
+
+const { data, layout } = toPlotly(result.scene);
+Plotly.react('chart', data, layout);
 ```
 
 ---
 
-## Core
+## `buildWaferMap(input, options?)`
+
+The primary entry point.  Pass whatever data you have — XY positions, optional
+geometry hints, or a pre-built die array.  The function infers whatever is
+missing and returns a fully constructed scene.
+
+```ts
+import { buildWaferMap } from 'wafermap';
+```
+
+### Input
+
+`buildWaferMap` accepts either an array of data points or an object:
+
+```ts
+// Array form — minimal
+buildWaferMap(data: WaferMapPoint[])
+
+// Object form — with optional geometry hints
+buildWaferMap({
+  data?: WaferMapPoint[],
+  wafer?: WaferOptions,
+  die?:   DieOptions,
+  dies?:  Die[],        // pre-built die array; skips geometry generation
+})
+```
+
+All fields are optional.  Supply what you know; the library handles the rest.
+
+#### `WaferMapPoint`
+
+```ts
+{
+  x: number
+  y: number
+  value?: number   // continuous measurement
+  bin?: number     // hard bin assignment
+  i?: number       // grid column index (skips grid inference when present on all points)
+  j?: number       // grid row index
+}
+```
+
+#### `WaferOptions`
+
+```ts
+{
+  diameter?: number                                    // mm; inferred from data if omitted
+  center?: { x: number; y: number }                   // mm; inferred from data centroid if omitted
+  flat?: { type: 'top' | 'bottom' | 'left' | 'right'; length: number }
+  orientation?: number                                 // degrees, default 0
+  metadata?: WaferMetadata
+}
+```
+
+#### `DieOptions`
+
+```ts
+{
+  width?: number     // mm; inferred from data spacing if omitted
+  height?: number
+  pitchX?: number    // grid spacing in X; defaults to width
+  pitchY?: number    // grid spacing in Y; defaults to height
+}
+```
+
+### Options
+
+All [`BuildSceneOptions`](#buildscene) fields are supported, plus:
+
+```ts
+{
+  plotMode?: 'value' | 'hardbin' | 'softbin' | 'stacked_values' | 'stacked_bins'
+             // auto-detected: 'value' when any point has a value, else 'hardbin'
+  debug?: boolean   // reserved for future diagnostic output
+  // ...all other BuildSceneOptions fields
+}
+```
+
+### Return value
+
+```ts
+{
+  wafer: Wafer          // resolved wafer model
+  dies:  Die[]          // clipped, oriented die array with data attached
+  scene: Scene          // renderer-agnostic scene; pass to toPlotly()
+  inference: {
+    wafer:    { confidence: number; method: string }
+    diePitch: { confidence: number }
+    grid:     { confidence: number }
+  }
+}
+```
+
+`confidence` values run from 0 (pure default) to 1 (fully determined from
+data).  `method` describes how the wafer diameter was resolved, e.g.
+`'snapped-300mm'`, `'rounded'`, `'provided'`, or `'default'`.
+
+### Examples
+
+**Minimal — XY data only:**
+```ts
+const result = buildWaferMap([
+  { x: 10, y: 20, value: 0.95 },
+  { x: 20, y: 20, value: 0.87 },
+]);
+```
+
+**With geometry hints:**
+```ts
+const result = buildWaferMap({
+  data,
+  wafer: { diameter: 300, orientation: 90 },
+  die:   { width: 10, height: 10 },
+});
+```
+
+**With bin data:**
+```ts
+const result = buildWaferMap({
+  data: csvRows.map(r => ({ x: r.x, y: r.y, bin: r.hardbin })),
+  wafer: { diameter: 200 },
+});
+```
+
+**Pre-built dies (full control):**
+```ts
+const wafer = createWafer({ diameter: 300 });
+const dies  = clipDiesToWafer(generateDies(wafer, { width: 10, height: 10 }), wafer);
+const result = buildWaferMap({ wafer: { diameter: 300 }, dies });
+```
+
+**Connecting to Plotly:**
+```ts
+const result = buildWaferMap(data);
+const { data: traces, layout } = toPlotly(result.scene);
+Plotly.react('chart', traces, layout);
+
+// Click drill-down:
+Plotly.on(el, 'plotly_click', (ev) => {
+  const die = result.scene.sourceDies[ev.points[0].pointIndex];
+});
+```
+
+---
+
+## `toPlotly(scene, options?)`
+
+Converts a scene into Plotly-compatible `{ data, layout }`.
+
+```ts
+interface ToPlotlyOptions {
+  showAxes?: boolean
+  showUnits?: boolean
+  diePitch?: { x: number; y: number }
+  axisLabels?: { x?: string; y?: string }
+}
+```
+
+Behavior:
+- Die rectangles → `layout.shapes` paths at `layer: 'below'`
+- Overlays → `layout.shapes` paths at `layer: 'above'`
+- Hover → invisible scatter trace (one point per die, indexed parallel to `scene.sourceDies`)
+- Text labels → scatter text trace (present when `scene.texts.length > 0`)
+- Continuous modes (`value`, `softbin`, `stacked_values`) → reference colorbar trace
+
+**Wiring click callbacks:**
+
+```js
+Plotly.on(document.getElementById('chart'), 'plotly_click', (event) => {
+  const die = scene.sourceDies[event.points[0].pointIndex];
+  // die.i, die.j, die.values, die.bins, die.metadata, etc.
+});
+```
+
+---
+
+## Package Surface
+
+Most consumers import from the top-level package:
+
+```ts
+import { buildWaferMap, toPlotly } from 'wafermap';
+```
+
+Or from subpath exports:
+
+```ts
+import { buildWaferMap }           from 'wafermap/renderer';
+import { createWafer, generateDies } from 'wafermap/core';
+import { toPlotly }                from 'wafermap/plotly-adapter';
+```
+
+---
+
+## Advanced / Manual Pipeline
+
+For full control over each pipeline stage, use the low-level functions directly.
+These are the building blocks that `buildWaferMap` uses internally.
 
 ### `createWafer(config)`
 
@@ -185,12 +374,6 @@ Returns a human-readable label for a ring index:
 
 Returns all distinct bin values present in the dies, sorted ascending.
 
-```ts
-getUniqueBins(dies: Die[], binIndex?: number): number[]
-```
-
-`binIndex` selects which position in `die.bins[]` to inspect (default `0` = hard bin). Useful for discovering which bins to iterate over before calling `aggregateBinCounts`.
-
 ---
 
 ### `aggregateBinCounts(diesByWafer, targetBin, binIndex?)`
@@ -199,9 +382,9 @@ Stacks multiple wafers and counts, per die position, how many wafers had a speci
 
 ```ts
 aggregateBinCounts(
-  diesByWafer: Die[][],   // one Die[] per wafer, all sharing the same grid layout
+  diesByWafer: Die[][],
   targetBin: number,
-  binIndex?: number       // which die.bins[] position to test, default 0
+  binIndex?: number
 ): Die[]
 ```
 
@@ -209,10 +392,9 @@ Returns one `Die` per unique `(i, j)` position where:
 - `values[0]` = number of wafers that had `targetBin` at this position
 - `bins[0]` = `targetBin`
 
-Use with `plotMode: 'value'` and `valueRange: [0, diesByWafer.length]` to get a colour scale that runs from "never occurred" to "occurred on every wafer".
+Use with `plotMode: 'value'` and `valueRange: [0, diesByWafer.length]`:
 
 ```ts
-// Show how many of 6 wafers had bin 11 at each die position
 const aggregated = aggregateBinCounts(diesByWafer, 11);
 const scene = buildScene(wafer, aggregated, [], {
   plotMode: 'value',
@@ -222,27 +404,24 @@ const scene = buildScene(wafer, aggregated, [], {
 
 ---
 
-## Renderer
-
 ### `buildScene(wafer, dies, reticles?, options?)`
 
-Builds the renderer-agnostic scene. All options are optional.
+Builds the renderer-agnostic scene.
 
 ```ts
 interface BuildSceneOptions {
   plotMode?: 'value' | 'hardbin' | 'softbin' | 'stacked_values' | 'stacked_bins'
-  showText?: boolean               // die value/bin labels
+  showText?: boolean
   showReticle?: boolean
   showProbePath?: boolean
   showRingBoundaries?: boolean
   showQuadrantBoundaries?: boolean
-  showXYIndicator?: boolean        // +X / +Y orientation arrows at bottom-left
+  showXYIndicator?: boolean
   ringCount?: number               // default 4
   dieGap?: number                  // kerf gap in mm, default 1
-  colorScheme?: 'color' | 'greyscale'   // default 'color'
-  highlightBin?: number            // dim all dies except this bin
-  valueRange?: [number, number]    // explicit [min, max] for value normalisation;
-                                   // auto-computed from die data when omitted
+  colorScheme?: string             // default 'color'
+  highlightBin?: number
+  valueRange?: [number, number]
   interactiveTransform?: {
     rotation?: number
     flipX?: boolean
@@ -250,8 +429,6 @@ interface BuildSceneOptions {
   }
 }
 ```
-
-**Value normalisation:** `die.values` may contain raw measurements at any scale. `buildScene` normalises them to `[0, 1]` internally for colour mapping. If `valueRange` is omitted the range is auto-computed from `values[0]` (single-value modes) or all values (stacked mode). Pass an explicit `valueRange` when you need a consistent scale across multiple charts (e.g. a lot-level gallery).
 
 Returns `Scene`:
 
@@ -262,23 +439,12 @@ Returns `Scene`:
   hoverPoints: SceneHoverPoint[]
   overlays: SceneOverlay[]
   plotMode: PlotMode
-  colorScheme: 'color' | 'greyscale'
+  colorScheme: string
   metadata: WaferMetadata | null
-  sourceDies: Die[]               // parallel to hoverPoints — use for click callbacks
-  valueRange: [number, number]    // actual [min, max] used for normalisation
+  sourceDies: Die[]
+  valueRange: [number, number]
 }
 ```
-
-`sourceDies` is populated in the same order as `hoverPoints`. In a Plotly click handler, `event.points[0].pointIndex` maps directly to `scene.sourceDies[pointIndex]`, giving you the original `Die` object for drill-down UIs.
-
-**Overlay kinds** produced by buildScene:
-`'wafer-boundary'`, `'reticle'`, `'probe-path'`, `'ring-boundary'`, `'quadrant-boundary'`, `'xy-indicator'`
-
----
-
-### `generateTextOverlay(dies, options)`
-
-Generates `SceneText[]` labels for the given dies and plot mode. Used internally by `buildScene`, but exported for custom rendering pipelines.
 
 ---
 
@@ -286,54 +452,12 @@ Generates `SceneText[]` labels for the given dies and plot mode. Used internally
 
 | Function | Description |
 | -------- | ----------- |
-| `hardBinColor(bin)` | Categorical colour for hard bin index 0–14 (0 = no data) |
-| `hardBinGreyscale(bin)` | Same, greyscale variant |
+| `hardBinColor(bin)` | Categorical colour for hard bin 0–14 |
+| `hardBinGreyscale(bin)` | Greyscale variant |
 | `softBinColor(bin, maxBin?)` | Maps bin to Viridis position |
 | `valueToViridis(t)` | Maps `t ∈ [0,1]` to Viridis RGB string |
-| `valueToGreyscale(t)` | Maps `t ∈ [0,1]` to grey RGB string (range 30–230) |
+| `valueToGreyscale(t)` | Maps `t ∈ [0,1]` to grey RGB string |
 | `contrastTextColor(cssColor)` | Returns `'#000000'` or `'#ffffff'` for WCAG contrast |
-
-Constants exported: `HARD_BIN_COLORS` (bins 0–14), `HARD_BIN_GREY` (bins 0–14).
-
----
-
-## Plotly Adapter
-
-### `toPlotly(scene, options?)`
-
-Converts a scene into Plotly-compatible `{ data, layout }`.
-
-```ts
-interface ToPlotlyOptions {
-  showAxes?: boolean                        // default false — show axis ticks and titles
-  showUnits?: boolean                       // default false — show raw mm tick values;
-                                            // when false and diePitch provided, ticks show
-                                            // integer die grid indices
-  diePitch?: { x: number; y: number }       // die pitch in mm; enables die-index axis ticks
-  axisLabels?: { x?: string; y?: string }   // override axis titles
-}
-```
-
-Behavior:
-
-- Die rectangles → `layout.shapes` paths at `layer: 'below'`
-- Overlays → `layout.shapes` paths at `layer: 'above'`
-- Hover → invisible scatter trace (one point per die, indexed parallel to `scene.sourceDies`)
-- Text labels → scatter text trace (present when `scene.texts.length > 0`)
-- Continuous modes (`value`, `softbin`, `stacked_values`) → reference colorbar trace using `scene.valueRange` for `cmin`/`cmax`; colorscale switches to greyscale ramp when `scene.colorScheme === 'greyscale'`
-
-**Wiring Plotly click callbacks:**
-
-```js
-const scene = buildScene(wafer, dies, [], options);
-const { data, layout } = toPlotly(scene);
-Plotly.react('chart', data, layout);
-
-Plotly.on(document.getElementById('chart'), 'plotly_click', (event) => {
-  const die = scene.sourceDies[event.points[0].pointIndex];
-  // die.i, die.j, die.values, die.bins, die.metadata, etc.
-});
-```
 
 ---
 
@@ -344,22 +468,20 @@ Plotly.on(document.getElementById('chart'), 'plotly_click', (event) => {
 ```ts
 {
   id: string
-  i: number                    // grid column index
-  j: number                    // grid row index
-  x: number                    // display coordinate (mm)
+  i: number
+  j: number
+  x: number
   y: number
   width: number
   height: number
-  values?: number[]            // raw test values; [0] = primary displayed value
-  bins?: number[]              // [0] = primary hard bin
+  values?: number[]
+  bins?: number[]
   metadata?: DieMetadata
   insideWafer?: boolean
-  partial?: boolean            // straddles wafer boundary
+  partial?: boolean
   probeIndex?: number
 }
 ```
-
-Values are stored at their natural scale (e.g. millivolts, normalised 0–1, counts). `buildScene` auto-ranges them for colour mapping — no pre-normalisation required.
 
 ### `WaferMetadata`
 
@@ -391,16 +513,14 @@ Values are stored at their natural scale (e.g. millivolts, normalised 0–1, cou
 
 ```ts
 {
-  ring: number       // 1 = innermost ring
+  ring: number
   quadrant: 'NE' | 'NW' | 'SW' | 'SE'
 }
 ```
 
 ---
 
-## Recommended Consumer Flows
-
-### Single wafer
+## Manual Pipeline Flow Reference
 
 ```text
 createWafer(config)
@@ -414,40 +534,6 @@ createWafer(config)
   → buildScene(wafer, dies, reticles, options)   → Scene
   → toPlotly(scene, options)                     → { data, layout }
   → Plotly.react(el, data, layout)
-```
-
-### Multi-wafer bin stacking
-
-```text
-[per wafer] enriched oriented dies  →  diesByWafer: Die[][]
-getUniqueBins(diesByWafer.flat())   →  bins: number[]
-
-[per bin]
-aggregateBinCounts(diesByWafer, bin)  →  Die[]  (values[0] = occurrence count)
-buildScene(wafer, aggregated, [], {
-  plotMode: 'value',
-  valueRange: [0, diesByWafer.length],   // shared scale across all bin maps
-})
-→ toPlotly(scene)  →  Plotly.react(el, data, layout)
-```
-
-### Minimal example
-
-```ts
-const wafer = createWafer({ diameter: 300 });
-const dies = generateDies(wafer, { width: 10, height: 10 });
-const clipped = clipDiesToWafer(dies, wafer, { width: 10, height: 10 });
-
-// attach your test data here
-
-const scene = buildScene(wafer, applyOrientation(clipped, wafer), [], {
-  plotMode: 'hardbin',
-  colorScheme: 'greyscale',
-  showXYIndicator: true,
-});
-
-const { data, layout } = toPlotly(scene, { showAxes: true, diePitch: { x: 10, y: 10 } });
-Plotly.react('chart', data, layout, { responsive: true });
 ```
 
 ---

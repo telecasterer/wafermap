@@ -3,14 +3,12 @@ import {
   generateDies,
   clipDiesToWafer,
   applyOrientation,
-  classifyDie,
-  getRingLabel,
   getUniqueBins,
   aggregateBinCounts,
+  getColorScheme,
+  listColorSchemes,
   buildScene,
   toPlotly,
-  HARD_BIN_COLORS,
-  hardBinColor,
 } from 'wafermap';
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -164,7 +162,7 @@ function renderPareto() {
       type: 'bar',
       x: sorted.map((d) => `Bin ${d.bin}`),
       y: sorted.map((d) => d.count),
-      marker: { color: sorted.map((d) => hardBinColor(d.bin)) },
+      marker: { color: sorted.map((d) => getColorScheme(state.ui.colorScheme).forBin(d.bin)) },
       name: 'Count',
     },
     {
@@ -224,7 +222,7 @@ function renderYieldChart() {
     name: `Bin ${bin}`,
     x: sortedWafers,
     y: sortedWafers.map((w) => binsByWafer[w][bin] ?? 0),
-    marker: { color: hardBinColor(bin) },
+    marker: { color: getColorScheme(state.ui.colorScheme).forBin(bin) },
   }));
 
   // Highlight selected wafers via opacity
@@ -355,7 +353,7 @@ function renderMapStats(targetId, dies, wafer) {
     .sort(([a], [b]) => Number(a) - Number(b))
     .map(([bin, count]) => {
       const pct = (100 * count / fullDies.length).toFixed(1);
-      return `<span class="stat-chip" style="border-color:${hardBinColor(Number(bin))}">B${bin}: ${count} (${pct}%)</span>`;
+      return `<span class="stat-chip" style="border-color:${getColorScheme(state.ui.colorScheme).forBin(Number(bin))}">B${bin}: ${count} (${pct}%)</span>`;
     }).join('');
   document.getElementById(targetId).innerHTML = rows;
 }
@@ -499,6 +497,13 @@ function populateMapControls() {
   ).join('');
   chanEl.parentElement.hidden = !state.cfg.valueCols.length;
 
+  // Colour scheme
+  const colorEl = document.getElementById('map-color');
+  colorEl.innerHTML = listColorSchemes()
+    .filter(({ name }) => name !== 'color')
+    .map(({ name, label }) => `<option value="${name}"${name === state.ui.colorScheme ? ' selected' : ''}>${label}</option>`)
+    .join('');
+
   // Highlight bin
   const allDies = Object.values(state.data.diesByWafer).flat();
   const bins = getUniqueBins(allDies);
@@ -590,6 +595,8 @@ function wireEvents() {
   });
   document.getElementById('map-color').addEventListener('change', (e) => {
     state.ui.colorScheme = e.target.value;
+    renderPareto();
+    renderYieldChart();
     refreshGallery();
   });
   document.getElementById('map-highlight').addEventListener('change', (e) => {
