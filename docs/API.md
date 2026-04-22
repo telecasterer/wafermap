@@ -18,6 +18,7 @@ import {
   generateDies,
   clipDiesToWafer,
   classifyDie,
+  aggregateBinCounts,
   buildScene,
   toPlotly,
 } from 'wafermap';
@@ -162,7 +163,7 @@ Returns:
 }
 ```
 
-Use this instead of implementing ring/quadrant logic in your app. The classification uses the die's current `x`/`y` display position, so it is orientation- and transform-aware.
+Uses the die's current `x`/`y` display position, so it is orientation- and transform-aware.
 
 ---
 
@@ -180,6 +181,47 @@ Returns a human-readable label for a ring index:
 
 ---
 
+### `getUniqueBins(dies, binIndex?)`
+
+Returns all distinct bin values present in the dies, sorted ascending.
+
+```ts
+getUniqueBins(dies: Die[], binIndex?: number): number[]
+```
+
+`binIndex` selects which position in `die.bins[]` to inspect (default `0` = hard bin). Useful for discovering which bins to iterate over before calling `aggregateBinCounts`.
+
+---
+
+### `aggregateBinCounts(diesByWafer, targetBin, binIndex?)`
+
+Stacks multiple wafers and counts, per die position, how many wafers had a specific bin value.
+
+```ts
+aggregateBinCounts(
+  diesByWafer: Die[][],   // one Die[] per wafer, all sharing the same grid layout
+  targetBin: number,
+  binIndex?: number       // which die.bins[] position to test, default 0
+): Die[]
+```
+
+Returns one `Die` per unique `(i, j)` position where:
+- `values[0]` = number of wafers that had `targetBin` at this position
+- `bins[0]` = `targetBin`
+
+Use with `plotMode: 'value'` and `valueRange: [0, diesByWafer.length]` to get a colour scale that runs from "never occurred" to "occurred on every wafer".
+
+```ts
+// Show how many of 6 wafers had bin 11 at each die position
+const aggregated = aggregateBinCounts(diesByWafer, 11);
+const scene = buildScene(wafer, aggregated, [], {
+  plotMode: 'value',
+  valueRange: [0, diesByWafer.length],
+});
+```
+
+---
+
 ## Renderer
 
 ### `buildScene(wafer, dies, reticles?, options?)`
@@ -194,11 +236,13 @@ interface BuildSceneOptions {
   showProbePath?: boolean
   showRingBoundaries?: boolean
   showQuadrantBoundaries?: boolean
-  showXYIndicator?: boolean        // +X / +Y orientation arrows
+  showXYIndicator?: boolean        // +X / +Y orientation arrows at bottom-left
   ringCount?: number               // default 4
   dieGap?: number                  // kerf gap in mm, default 1
   colorScheme?: 'color' | 'greyscale'   // default 'color'
   highlightBin?: number            // dim all dies except this bin
+  valueRange?: [number, number]    // explicit [min, max] for value normalisation;
+                                   // auto-computed from die data when omitted
   interactiveTransform?: {
     rotation?: number
     flipX?: boolean
@@ -206,6 +250,8 @@ interface BuildSceneOptions {
   }
 }
 ```
+
+**Value normalisation:** `die.values` may contain raw measurements at any scale. `buildScene` normalises them to `[0, 1]` internally for colour mapping. If `valueRange` is omitted the range is auto-computed from `values[0]` (single-value modes) or all values (stacked mode). Pass an explicit `valueRange` when you need a consistent scale across multiple charts (e.g. a lot-level gallery).
 
 Returns `Scene`:
 
@@ -219,6 +265,7 @@ Returns `Scene`:
   colorScheme: 'color' | 'greyscale'
   metadata: WaferMetadata | null
   sourceDies: Die[]               // parallel to hoverPoints — use for click callbacks
+  valueRange: [number, number]    // actual [min, max] used for normalisation
 }
 ```
 
@@ -239,14 +286,14 @@ Generates `SceneText[]` labels for the given dies and plot mode. Used internally
 
 | Function | Description |
 | -------- | ----------- |
-| `hardBinColor(bin)` | Categorical colour for hard bin index (0 = no data) |
+| `hardBinColor(bin)` | Categorical colour for hard bin index 0–14 (0 = no data) |
 | `hardBinGreyscale(bin)` | Same, greyscale variant |
 | `softBinColor(bin, maxBin?)` | Maps bin to Viridis position |
 | `valueToViridis(t)` | Maps `t ∈ [0,1]` to Viridis RGB string |
 | `valueToGreyscale(t)` | Maps `t ∈ [0,1]` to grey RGB string (range 30–230) |
 | `contrastTextColor(cssColor)` | Returns `'#000000'` or `'#ffffff'` for WCAG contrast |
 
-Constants exported: `HARD_BIN_COLORS`, `HARD_BIN_GREY`, `VIRIDIS`.
+Constants exported: `HARD_BIN_COLORS` (bins 0–14), `HARD_BIN_GREY` (bins 0–14).
 
 ---
 
@@ -258,9 +305,12 @@ Converts a scene into Plotly-compatible `{ data, layout }`.
 
 ```ts
 interface ToPlotlyOptions {
-  showAxes?: boolean                    // default false — show axis ticks and titles
-  showUnits?: boolean                   // default false — append "(mm)" to axis titles
-  axisLabels?: { x?: string; y?: string }  // override axis titles (default "X" / "Y")
+  showAxes?: boolean                        // default false — show axis ticks and titles
+  showUnits?: boolean                       // default false — show raw mm tick values;
+                                            // when false and diePitch provided, ticks show
+                                            // integer die grid indices
+  diePitch?: { x: number; y: number }       // die pitch in mm; enables die-index axis ticks
+  axisLabels?: { x?: string; y?: string }   // override axis titles
 }
 ```
 
@@ -270,7 +320,7 @@ Behavior:
 - Overlays → `layout.shapes` paths at `layer: 'above'`
 - Hover → invisible scatter trace (one point per die, indexed parallel to `scene.sourceDies`)
 - Text labels → scatter text trace (present when `scene.texts.length > 0`)
-- Continuous modes (`value`, `softbin`, `stacked_values`) → reference colorbar trace; colorscale switches to greyscale ramp when `scene.colorScheme === 'greyscale'`
+- Continuous modes (`value`, `softbin`, `stacked_values`) → reference colorbar trace using `scene.valueRange` for `cmin`/`cmax`; colorscale switches to greyscale ramp when `scene.colorScheme === 'greyscale'`
 
 **Wiring Plotly click callbacks:**
 
@@ -300,7 +350,7 @@ Plotly.on(document.getElementById('chart'), 'plotly_click', (event) => {
   y: number
   width: number
   height: number
-  values?: number[]            // [0] = primary, range [0,1] for colour mapping
+  values?: number[]            // raw test values; [0] = primary displayed value
   bins?: number[]              // [0] = primary hard bin
   metadata?: DieMetadata
   insideWafer?: boolean
@@ -308,6 +358,8 @@ Plotly.on(document.getElementById('chart'), 'plotly_click', (event) => {
   probeIndex?: number
 }
 ```
+
+Values are stored at their natural scale (e.g. millivolts, normalised 0–1, counts). `buildScene` auto-ranges them for colour mapping — no pre-normalisation required.
 
 ### `WaferMetadata`
 
@@ -346,13 +398,15 @@ Plotly.on(document.getElementById('chart'), 'plotly_click', (event) => {
 
 ---
 
-## Recommended Consumer Flow
+## Recommended Consumer Flows
+
+### Single wafer
 
 ```text
 createWafer(config)
   → generateDies(wafer, dieConfig)
   → clipDiesToWafer(dies, wafer, dieConfig)
-  → [app attaches values / bins / metadata to each die]
+  → [attach values / bins / metadata to each die]
   → applyProbeSequence(dies, config)      // optional
   → applyOrientation(dies, wafer)
   ↓  (at render time, on each redraw)
@@ -362,14 +416,29 @@ createWafer(config)
   → Plotly.react(el, data, layout)
 ```
 
-Minimal example:
+### Multi-wafer bin stacking
+
+```text
+[per wafer] enriched oriented dies  →  diesByWafer: Die[][]
+getUniqueBins(diesByWafer.flat())   →  bins: number[]
+
+[per bin]
+aggregateBinCounts(diesByWafer, bin)  →  Die[]  (values[0] = occurrence count)
+buildScene(wafer, aggregated, [], {
+  plotMode: 'value',
+  valueRange: [0, diesByWafer.length],   // shared scale across all bin maps
+})
+→ toPlotly(scene)  →  Plotly.react(el, data, layout)
+```
+
+### Minimal example
 
 ```ts
 const wafer = createWafer({ diameter: 300 });
 const dies = generateDies(wafer, { width: 10, height: 10 });
 const clipped = clipDiesToWafer(dies, wafer, { width: 10, height: 10 });
 
-// enrich dies with your test data here
+// attach your test data here
 
 const scene = buildScene(wafer, applyOrientation(clipped, wafer), [], {
   plotMode: 'hardbin',
@@ -377,7 +446,7 @@ const scene = buildScene(wafer, applyOrientation(clipped, wafer), [], {
   showXYIndicator: true,
 });
 
-const { data, layout } = toPlotly(scene, { showAxes: true, showUnits: true });
+const { data, layout } = toPlotly(scene, { showAxes: true, diePitch: { x: 10, y: 10 } });
 Plotly.react('chart', data, layout, { responsive: true });
 ```
 
@@ -387,4 +456,5 @@ Plotly.react('chart', data, layout, { responsive: true });
 
 - Ring segmentation uses equal-width radial bands. Configurable breakpoints are planned.
 - Plotly types are not exposed as formal peer-typed interfaces.
-- No built-in CSV/ATDF data loaders yet (planned).
+- `aggregateDieValues` helper (mean / median collapse across `die.values[]`) is not yet implemented.
+- `bin_count` plot mode (colour by how many stacked bins match a target) is not yet implemented.

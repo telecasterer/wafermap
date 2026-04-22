@@ -1,4 +1,5 @@
 import type { Scene } from '../renderer/buildScene.js';
+import { getColorScheme } from '../renderer/colorSchemes.js';
 
 export interface PlotlyOutput {
   data: object[];
@@ -92,9 +93,7 @@ export function toPlotly(scene: Scene, options: ToPlotlyOptions = {}): PlotlyOut
   }
 
   if (plotMode === 'value' || plotMode === 'softbin' || plotMode === 'stacked_values') {
-    const colorscale = colorScheme === 'greyscale'
-      ? [[0, 'rgb(30,30,30)'], [1, 'rgb(230,230,230)']]
-      : 'Viridis';
+    const colorscale = getColorScheme(colorScheme).plotlyColorscale;
     const [cmin, cmax] = valueRange ?? [0, 1];
     traces.push({
       type: 'scatter', mode: 'markers',

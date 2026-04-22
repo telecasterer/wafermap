@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>wafermap analyzer</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script type="importmap">{ "imports": { "wafermap": "../../dist/index.js" } }</script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #eceef0;
+      --card: #fff;
+      --border: #dde0e4;
+      --accent: #1a6eff;
+      --accent-light: #d0e4ff;
+      --text: #222;
+      --muted: #777;
+      --radius: 8px;
+    }
+
+    body {
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* ── Header ─────────────────────────────────────── */
+    #header {
+      background: #1a1f2e;
+      color: #e8eaf0;
+      padding: 0 20px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+
+    #header h1 {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: .03em;
+      color: #e8eaf0;
+    }
+
+    #header .tagline {
+      font-size: 11px;
+      color: #8892a4;
+    }
+
+    #header .spacer { flex: 1; }
+
+    /* ── Upload zone ──────────────────────────────── */
+    #upload-section {
+      padding: 20px 20px 0;
+    }
+
+    #drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      background: var(--card);
+      padding: 28px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+
+    #drop-zone:hover, #drop-zone.drag-over {
+      border-color: var(--accent);
+      background: #f0f5ff;
+    }
+
+    #drop-zone .drop-icon { font-size: 28px; margin-bottom: 8px; }
+    #drop-zone p { color: var(--muted); font-size: 13px; }
+    #drop-zone strong { color: var(--accent); }
+    #file-name { font-size: 11px; color: var(--muted); margin-top: 6px; text-align: center; }
+
+    /* ── Config panel ────────────────────────────── */
+    #config-section {
+      margin: 12px 20px 0;
+      background: var(--card);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      padding: 14px 16px;
+    }
+
+    .config-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--muted);
+      letter-spacing: .05em;
+      margin-bottom: 12px;
+    }
+
+    .config-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      align-items: flex-start;
+    }
+
+    .cfg-group {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .cfg-group label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .03em;
+    }
+
+    .cfg-group select, .cfg-group input[type=number] {
+      padding: 5px 7px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      font-size: 12px;
+      background: #fafafa;
+      min-width: 110px;
+    }
+
+    .cfg-group.value-cols {
+      max-width: 300px;
+    }
+
+    #cfg-valuecols {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 10px;
+      padding: 5px 0;
+    }
+
+    .check-label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .cfg-hint {
+      font-size: 10px;
+      color: #aaa;
+      margin-top: 2px;
+    }
+
+    .cfg-row-btns {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      padding-bottom: 2px;
+    }
+
+    .btn {
+      padding: 6px 14px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #fafafa;
+      cursor: pointer;
+      transition: background .1s;
+    }
+    .btn:hover { background: #eee; }
+    .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn.primary:hover { background: #1558d0; }
+    .btn.active { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
+    .btn.sm { padding: 4px 9px; font-size: 11px; font-weight: 500; }
+
+    /* ── Main layout ─────────────────────────────── */
+    #main {
+      flex: 1;
+      padding: 12px 20px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* ── Analytics row ───────────────────────────── */
+    #analytics-section {
+      display: grid;
+      grid-template-columns: 1fr 1.4fr;
+      gap: 12px;
+    }
+
+    .chart-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      padding: 4px;
+      min-height: 300px;
+    }
+
+    /* ── Map section ─────────────────────────────── */
+    #map-section { display: flex; flex-direction: column; gap: 8px; }
+
+    #map-toolbar {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 12px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .ctrl-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .ctrl-group + .ctrl-group {
+      padding-left: 10px;
+      border-left: 1px solid var(--border);
+    }
+
+    .ctrl-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .ctrl-group select {
+      padding: 4px 6px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      font-size: 12px;
+      background: #fafafa;
+    }
+
+    /* View tabs */
+    .view-tabs { display: flex; gap: 4px; }
+
+    /* Wafer selection bar */
+    #wafer-selection-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    #wafer-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      flex: 1;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--accent-light);
+      border: 1px solid #9bc1ff;
+      border-radius: 12px;
+      padding: 2px 8px 2px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    .chip-remove {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--accent);
+      font-size: 13px;
+      line-height: 1;
+      padding: 0 1px;
+      opacity: 0.7;
+    }
+    .chip-remove:hover { opacity: 1; }
+
+    /* Gallery grid */
+    #wafermap-gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 10px;
+    }
+
+    .map-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .map-card-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 7px 10px 4px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .map-card-title { font-weight: 700; font-size: 13px; }
+    .map-card-sub { font-size: 10px; color: var(--muted); }
+
+    .map-card-remove {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #bbb;
+      font-size: 16px;
+      line-height: 1;
+      padding: 0;
+    }
+    .map-card-remove:hover { color: #e74c3c; }
+
+    .map-chart {
+      aspect-ratio: 1;
+      width: 100%;
+    }
+
+    .map-stats {
+      padding: 6px 8px;
+      border-top: 1px solid #f0f0f0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      min-height: 26px;
+    }
+
+    .stat-chip {
+      display: inline-block;
+      font-size: 10px;
+      padding: 2px 6px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--muted);
+    }
+
+    .empty-msg {
+      grid-column: 1 / -1;
+      color: var(--muted);
+      padding: 24px;
+      text-align: center;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <h1>wafermap analyzer</h1>
+  <span class="tagline">Load a CSV · Explore bin distributions · Visualise wafermaps</span>
+  <div class="spacer"></div>
+</div>
+
+<div id="upload-section">
+  <div id="drop-zone">
+    <div class="drop-icon">📂</div>
+    <p><strong>Drop a CSV file here</strong> or click to browse</p>
+    <p style="margin-top:4px;font-size:11px;">Expected columns: wafer ID, die X, die Y, hard bin — plus any number of test value columns</p>
+  </div>
+  <p id="file-name"></p>
+  <input type="file" id="file-input" accept=".csv" style="display:none">
+</div>
+
+<!-- Config panel -->
+<section id="config-section" hidden>
+  <div class="config-title">Column Mapping &amp; Geometry</div>
+  <div class="config-grid">
+
+    <div class="cfg-group">
+      <label>Wafer ID</label>
+      <select id="cfg-wafer"></select>
+    </div>
+
+    <div class="cfg-group">
+      <label>Die X (column index)</label>
+      <select id="cfg-x"></select>
+    </div>
+
+    <div class="cfg-group">
+      <label>Die Y (row index)</label>
+      <select id="cfg-y"></select>
+    </div>
+
+    <div class="cfg-group">
+      <label>Hard Bin</label>
+      <select id="cfg-hbin"></select>
+    </div>
+
+    <div class="cfg-group">
+      <label>Soft Bin (optional)</label>
+      <select id="cfg-sbin"></select>
+    </div>
+
+    <div class="cfg-group">
+      <label>Die Width (mm)</label>
+      <input type="number" id="cfg-die-w" min="0.1" step="0.5" value="10">
+    </div>
+
+    <div class="cfg-group">
+      <label>Die Height (mm)</label>
+      <input type="number" id="cfg-die-h" min="0.1" step="0.5" value="10">
+    </div>
+
+    <div class="cfg-group">
+      <label>Wafer Diameter (mm)</label>
+      <input type="number" id="cfg-diameter" min="50" step="25" value="200">
+      <span class="cfg-hint"><button class="btn sm" id="btn-suggest-diameter">Auto-suggest</button></span>
+    </div>
+
+    <div class="cfg-group">
+      <label>Pass Bin</label>
+      <select id="cfg-passbin"><option value="">None</option></select>
+      <span class="cfg-hint">Used to sort yield chart</span>
+    </div>
+
+    <div class="cfg-group value-cols">
+      <label>Test Value Columns</label>
+      <div id="cfg-valuecols"></div>
+    </div>
+
+    <div class="cfg-row-btns">
+      <button class="btn primary" id="btn-process">Visualise →</button>
+    </div>
+
+  </div>
+</section>
+
+<div id="main">
+
+  <!-- Analytics charts -->
+  <section id="analytics-section" hidden>
+    <div class="chart-card" id="chart-pareto"></div>
+    <div class="chart-card" id="chart-yield">
+      <p style="padding:12px;color:var(--muted);font-size:12px;">Click wafer bars to add them to the wafermap gallery.</p>
+    </div>
+  </section>
+
+  <!-- Wafermap section -->
+  <section id="map-section" hidden>
+
+    <div id="map-toolbar">
+      <div class="ctrl-group view-tabs">
+        <button class="btn active" id="btn-view-maps">Wafer Maps</button>
+        <button class="btn" id="btn-view-bingallery">Bin Gallery</button>
+      </div>
+
+      <div class="ctrl-group" id="wafer-selection-bar">
+        <div id="wafer-chips"></div>
+        <button class="btn sm" id="btn-select-all">All</button>
+        <button class="btn sm" id="btn-clear-selection">Clear</button>
+      </div>
+
+      <div class="ctrl-group">
+        <span class="ctrl-label">Mode</span>
+        <select id="map-mode"></select>
+      </div>
+
+      <div class="ctrl-group" id="map-channel-group" hidden>
+        <span class="ctrl-label">Test</span>
+        <select id="map-channel"></select>
+      </div>
+
+      <div class="ctrl-group">
+        <span class="ctrl-label">Colour</span>
+        <select id="map-color">
+          <option value="color">Colour</option>
+          <option value="greyscale">Greyscale</option>
+        </select>
+      </div>
+
+      <div class="ctrl-group">
+        <span class="ctrl-label">Highlight Bin</span>
+        <select id="map-highlight"></select>
+      </div>
+
+      <div class="ctrl-group">
+        <button class="btn sm" id="btn-rings">Rings</button>
+        <button class="btn sm" id="btn-quadrants">Quadrants</button>
+        <button class="btn sm" id="btn-xy">XY</button>
+      </div>
+    </div>
+
+    <div id="wafermap-gallery">
+      <p class="empty-msg">Load a CSV file and click Visualise to get started.</p>
+    </div>
+
+  </section>
+
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

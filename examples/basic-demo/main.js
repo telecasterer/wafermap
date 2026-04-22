@@ -8,6 +8,7 @@ import {
   generateReticleGrid,
   classifyDie,
   getRingLabel,
+  listColorSchemes,
   buildScene,
   toPlotly,
 } from 'wafermap';
@@ -263,7 +264,12 @@ function wireControls() {
     redraw();
   });
 
-  document.getElementById('sel-color').addEventListener('change', (event) => {
+  const colorSel = document.getElementById('sel-color');
+  colorSel.innerHTML = listColorSchemes()
+    .filter(({ name }) => name !== 'color') // hide the 'color' alias
+    .map(({ name, label }) => `<option value="${name}"${name === appState.colorScheme ? ' selected' : ''}>${label}</option>`)
+    .join('');
+  colorSel.addEventListener('change', (event) => {
     appState.colorScheme = event.target.value;
     redraw();
   });

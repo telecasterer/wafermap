@@ -9,6 +9,8 @@ It is built around a clean split between wafer-domain logic and chart-library in
 - `packages/plotly-adapter`: converts that scene into Plotly `data` + `layout`
 - `examples/basic-demo`: showcase demo with the richer controls and layout
 - `examples/plotly-integration-demo`: integration recipe demo using the built `wafermap` output
+- `examples/gallery-demo`: 2×2 lot gallery showing four wafers side-by-side
+- `examples/bin-gallery-demo`: stacked bin gallery — one map per bin showing occurrence counts across all wafers
 - `examples/vite-demo`: bundler-based consumer example using Vite
 
 The goal is to make wafer plotting usable for web developers without pushing wafer geometry rules down into Plotly code.
@@ -24,7 +26,8 @@ Current status: working prototype / shareable architecture baseline
 What works now:
 
 - True rectangular die rendering with configurable kerf gap
-- Hard bin, soft bin, value, stacked bin, and stacked value modes
+- Hard bin, soft bin, value, stacked bin, and stacked value plot modes
+- Auto-ranging value scale — store raw measurements at any scale, the renderer normalises automatically; explicit `valueRange` available for cross-chart consistency
 - Greyscale colour scheme option for all plot modes
 - Bin highlight — dim all dies except a selected bin
 - Wafer clipping with partial die detection
@@ -32,19 +35,22 @@ What works now:
 - Die metadata and wafer metadata flows
 - Centered die text overlays
 - Reticle, probe, ring, and quadrant overlays
-- XY orientation indicator (rotates with the wafer)
+- XY orientation indicator (rotates with the wafer, fixed to bottom-left corner)
 - `classifyDie` / `getRingLabel` helpers for ring and quadrant stats
 - `scene.sourceDies` for Plotly click / hover callbacks with raw die data
-- Configurable axis display with optional mm unit suffix in the Plotly adapter
+- `scene.valueRange` — actual data range used for normalisation, reflected on the colorbar
+- Configurable axis display with die-index or mm tick labels in the Plotly adapter
+- `aggregateBinCounts` / `getUniqueBins` — stack N wafers and count per-position bin occurrences for lot-level defect maps
+- Hard bin colour palette covers bins 0–14
 - CI workflow for build, test, and package dry-run validation
 
 What is still missing:
 
 - npm publication
-- data loading helpers
-- configurable fab-specific ring definitions
-- `aggregateDieValues` helper (mean / median collapse)
-- `bin_count` plot mode
+- `aggregateDieValues` helper (mean / median collapse across `die.values[]`)
+- `bin_count` plot mode (colour by matching bin count across stacked tests)
+- Configurable fab-specific ring breakpoints
+- Built-in CSV / ATDF data loaders
 
 ## Project Layout
 
@@ -57,6 +63,8 @@ packages/
     metadata.ts
     reticle.ts
     probe.ts
+    classify.ts       # classifyDie, getRingLabel
+    aggregates.ts     # aggregateBinCounts, getUniqueBins
   renderer/
     buildScene.ts
     colorMap.ts
@@ -64,21 +72,14 @@ packages/
     toPlotly.ts
 
 examples/
-  basic-demo/
-    index.html
-    main.js
-  plotly-integration-demo/
-    index.html
-    main.js
-  vite-demo/
-    index.html
-    package.json
-    src/
+  basic-demo/             # single-wafer showcase with all controls
+  plotly-integration-demo/  # integration recipe
+  gallery-demo/           # 2×2 lot gallery (W01–W04)
+  bin-gallery-demo/       # stacked bin occurrence maps, one per bin
+  vite-demo/              # bundler-based consumer example
 
 data/
-  dummy-test.csv
-  dummy-bins.csv
-  dummy-advanced.csv
+  dummy-fulldata.csv      # LOT456, W01–W06, hbin/sbin/testA/testB/testC
 ```
 
 ## Architecture
@@ -95,6 +96,8 @@ Core owns wafer-domain logic:
 - reticle generation
 - probe ordering
 - metadata attachment
+- ring / quadrant classification
+- multi-wafer bin aggregation
 
 Core should not know about Plotly.
 
@@ -113,6 +116,7 @@ The renderer layer is the key abstraction.
   colorScheme: 'color' | 'greyscale',
   metadata: WaferMetadata | null,
   sourceDies: Die[],
+  valueRange: [number, number],   // actual [min, max] used for colour normalisation
 }
 ```
 
@@ -196,7 +200,11 @@ Features shown there:
 - wafer metadata panel
 - total, pass, partial, ring, and quadrant stats
 
-There is also a slimmer integration recipe in [examples/plotly-integration-demo/index.html](examples/plotly-integration-demo/index.html) and [examples/plotly-integration-demo/main.js](examples/plotly-integration-demo/main.js). Both demos now import the built package through an import map instead of copying the library code inline.
+There is also a slimmer integration recipe in [examples/plotly-integration-demo/index.html](examples/plotly-integration-demo/index.html) and [examples/plotly-integration-demo/main.js](examples/plotly-integration-demo/main.js). Both demos import the built package through an import map.
+
+A 2×2 lot gallery is in [examples/gallery-demo/](examples/gallery-demo/) showing four wafers from the same lot side-by-side with shared controls.
+
+A stacked-bin gallery is in [examples/bin-gallery-demo/](examples/bin-gallery-demo/) — it uses `aggregateBinCounts` to stack all six wafers and renders one map per hard bin, where the colour at each die position shows how many wafers had that bin there.
 
 For a normal bundler workflow, there is also [examples/vite-demo/package.json](examples/vite-demo/package.json) with source in [examples/vite-demo/src/main.js](examples/vite-demo/src/main.js). That example consumes the local package as `wafermap` through a file dependency.
 
@@ -209,16 +217,13 @@ cd wafermap
 python3 -m http.server 8000
 ```
 
-Then open:
+Then open any of the demos:
 
 ```text
 http://127.0.0.1:8000/examples/basic-demo/
-```
-
-For the integration recipe, open:
-
-```text
 http://127.0.0.1:8000/examples/plotly-integration-demo/
+http://127.0.0.1:8000/examples/gallery-demo/
+http://127.0.0.1:8000/examples/bin-gallery-demo/
 ```
 
 For the Vite example:
@@ -259,7 +264,8 @@ const clipped = clipDiesToWafer(dies, wafer, { width: 10, height: 10 });
 const enriched = clipped.map((die, idx) => ({
   ...die,
   bins: [idx % 3 === 0 ? 1 : 2],
-  values: [Math.max(0, 1 - Math.abs(die.i) * 0.06 - Math.abs(die.j) * 0.05)],
+  // values can be raw measurements at any scale — buildScene auto-ranges them
+  values: [850 - Math.abs(die.i) * 40 - Math.abs(die.j) * 35],   // e.g. mV
   metadata: { lotId: 'LOT-42', waferId: 'LOT-42-W07', deviceType: 'DemoDevice' },
 }));
 

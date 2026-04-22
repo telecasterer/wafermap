@@ -3,12 +3,8 @@ import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
 import type { DieMetadata, WaferMetadata } from '../core/metadata.js';
 import { rotatePoint } from '../core/transforms.js';
-import {
-  hardBinColor, hardBinGreyscale,
-  softBinColor,
-  valueToViridis, valueToGreyscale,
-  contrastTextColor,
-} from './colorMap.js';
+import { contrastTextColor } from './colorMap.js';
+import { getColorScheme } from './colorSchemes.js';
 
 export type PlotMode = 'value' | 'hardbin' | 'softbin' | 'stacked_values' | 'stacked_bins';
 
@@ -58,7 +54,7 @@ export interface Scene {
   texts: SceneText[];
   overlays: SceneOverlay[];
   plotMode: PlotMode;
-  colorScheme: 'color' | 'greyscale';
+  colorScheme: string;
   metadata: WaferMetadata | null;
   sourceDies: Die[];
   /** Actual [min, max] of the value data used for color normalization. */
@@ -75,7 +71,8 @@ export interface BuildSceneOptions {
   showQuadrantBoundaries?: boolean;
   showXYIndicator?: boolean;
   dieGap?: number;
-  colorScheme?: 'color' | 'greyscale';
+  /** Named colour scheme — any scheme registered via registerColorScheme(). Default: 'default'. */
+  colorScheme?: string;
   highlightBin?: number;
   interactiveTransform?: { rotation?: number; flipX?: boolean; flipY?: boolean };
   /**
@@ -220,33 +217,37 @@ function buildHoverText(die: Die): string {
   return lines.join('<br>');
 }
 
-export function generateTextOverlay(dies: Die[], options: { plotMode: PlotMode }): SceneText[] {
+export function generateTextOverlay(
+  dies: Die[],
+  options: { plotMode: PlotMode; colorFns: ColorFns; normalize: (v: number) => number },
+): SceneText[] {
+  const { plotMode, colorFns, normalize } = options;
   return dies.flatMap((die) => {
     let text = '';
     let color = '#111111';
 
-    if (options.plotMode === 'value') {
+    if (plotMode === 'value') {
       if (!die.values?.length) return [];
       text = formatValueLabel([die.values[0]]);
-      color = contrastTextColor(valueToViridis(die.values[0]));
-    } else if (options.plotMode === 'hardbin') {
+      color = contrastTextColor(colorFns.forValue(normalize(die.values[0])));
+    } else if (plotMode === 'hardbin') {
       const bin = die.bins?.[0];
       if (bin === undefined) return [];
       text = String(bin);
-      color = contrastTextColor(hardBinColor(bin));
-    } else if (options.plotMode === 'softbin') {
+      color = contrastTextColor(colorFns.forHardBin(bin));
+    } else if (plotMode === 'softbin') {
       const bin = die.bins?.[0];
       if (bin === undefined) return [];
       text = String(bin);
-      color = contrastTextColor(softBinColor(bin));
-    } else if (options.plotMode === 'stacked_bins') {
+      color = contrastTextColor(colorFns.forSoftBin(bin));
+    } else if (plotMode === 'stacked_bins') {
       if (!die.bins?.length) return [];
       text = formatBinLabel(die.bins);
-      color = contrastTextColor(hardBinColor(die.bins[Math.floor(die.bins.length / 2)]));
+      color = contrastTextColor(colorFns.forHardBin(die.bins[Math.floor(die.bins.length / 2)]));
     } else {
       if (!die.values?.length) return [];
       text = formatValueLabel(die.values);
-      color = contrastTextColor(valueToViridis(die.values[Math.floor(die.values.length / 2)]));
+      color = contrastTextColor(colorFns.forValue(normalize(die.values[Math.floor(die.values.length / 2)])));
     }
 
     return [{
@@ -502,9 +503,22 @@ export function buildScene(
     valueRange: explicitRange,
   } = options;
 
-  const colorFns: ColorFns = colorScheme === 'greyscale'
-    ? { forValue: valueToGreyscale, forHardBin: hardBinGreyscale, forSoftBin: (b) => valueToGreyscale(b / 6) }
-    : { forValue: valueToViridis, forHardBin: hardBinColor, forSoftBin: softBinColor };
+  const scheme = getColorScheme(colorScheme);
+
+  // Auto-range soft bins so the gradient spans the actual bin values in the data.
+  let maxSoftBin = 1;
+  if (plotMode === 'softbin') {
+    for (const die of dies) {
+      const b = die.bins?.[0] ?? 0;
+      if (b > maxSoftBin) maxSoftBin = b;
+    }
+  }
+
+  const colorFns: ColorFns = {
+    forValue: scheme.forValue,
+    forHardBin: scheme.forBin,
+    forSoftBin: (bin) => scheme.forValue(Math.max(0, Math.min(1, bin / maxSoftBin))),
+  };
 
   // Compute value range for normalization (used by value / stacked_values modes).
   // For 'value' mode only values[0] is rendered — range against that channel only.
@@ -538,7 +552,7 @@ export function buildScene(
     hoverPoints.push({ x: die.x, y: die.y, text: buildHoverText(die) });
   }
 
-  const texts: SceneText[] = showText ? generateTextOverlay(dies, { plotMode }) : [];
+  const texts: SceneText[] = showText ? generateTextOverlay(dies, { plotMode, colorFns, normalize }) : [];
   const overlays = buildBoundaryOverlay(wafer, transform);
 
   if (showRingBoundaries) overlays.push(...buildRingOverlays(wafer, transform, ringCount));
