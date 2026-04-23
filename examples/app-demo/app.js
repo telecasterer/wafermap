@@ -1,8 +1,5 @@
 import {
-  createWafer,
-  generateDies,
-  clipDiesToWafer,
-  applyOrientation,
+  buildWaferMap,
   getUniqueBins,
   aggregateBinCounts,
   getColorScheme,
@@ -20,8 +17,6 @@ const state = {
     waferCol: '', xCol: '', yCol: '',
     hbinCol: '', sbinCol: '',
     valueCols: [],
-    dieW: 10, dieH: 10,
-    diameter: 200,
     passBin: null,
   },
   data: {
@@ -31,7 +26,7 @@ const state = {
   },
   ui: {
     selectedWafers: new Set(),
-    view: 'maps',         // 'maps' | 'bingallery'
+    view: 'maps',
     plotMode: 'hardbin',
     valueChannel: 0,
     colorScheme: 'color',
@@ -45,9 +40,9 @@ const state = {
 // ── CSV parsing ───────────────────────────────────────────────────────────────
 
 function parseCsv(text) {
-  const lines = text.trim().split(/\r?\n/);
-  const headers = lines[0].split(',').map((h) => h.trim());
-  const rows = lines.slice(1).filter(Boolean).map((line) => {
+  const lines   = text.trim().split(/\r?\n/);
+  const headers = lines[0].split(',').map(h => h.trim());
+  const rows    = lines.slice(1).filter(Boolean).map(line => {
     const vals = line.split(',');
     return Object.fromEntries(headers.map((h, i) => [h, (vals[i] ?? '').trim()]));
   });
@@ -58,81 +53,73 @@ function parseCsv(text) {
 
 function autoDetect(headers, rows) {
   const find = (...patterns) =>
-    headers.find((h) => patterns.some((p) => h.toLowerCase().includes(p)));
+    headers.find(h => patterns.some(p => h.toLowerCase().includes(p)));
 
-  const waferCol  = find('wafer', 'wid', 'wafer_id') ?? headers[0];
-  const xCol      = find('die_x', 'diex', ' x', '_x') ?? find('col') ?? headers[1];
-  const yCol      = find('die_y', 'diey', ' y', '_y') ?? find('row') ?? headers[2];
-  const hbinCol   = find('hbin', 'hard_bin', 'hardbin', 'bin') ?? '';
-  const sbinCol   = find('sbin', 'soft_bin', 'softbin') ?? '';
+  const waferCol = find('wafer', 'wid', 'wafer_id') ?? headers[0];
+  const xCol     = find('die_x', 'diex', ' x', '_x') ?? find('col') ?? headers[1];
+  const yCol     = find('die_y', 'diey', ' y', '_y') ?? find('row') ?? headers[2];
+  const hbinCol  = find('hbin', 'hard_bin', 'hardbin', 'bin') ?? '';
+  const sbinCol  = find('sbin', 'soft_bin', 'softbin') ?? '';
 
   const reserved = new Set([waferCol, xCol, yCol, hbinCol, sbinCol].filter(Boolean));
   reserved.add(find('lot', 'lotid') ?? '');
   reserved.add(find('date', 'testdate') ?? '');
   reserved.add(find('temp') ?? '');
 
-  const valueCols = headers.filter((h) => {
+  const valueCols = headers.filter(h => {
     if (reserved.has(h)) return false;
-    return rows.slice(0, 20).some((r) => r[h] !== '' && !isNaN(Number(r[h])));
+    return rows.slice(0, 20).some(r => r[h] !== '' && !isNaN(Number(r[h])));
   });
 
   return { waferCol, xCol, yCol, hbinCol, sbinCol, valueCols };
-}
-
-function suggestDiameter(rows, xCol, yCol, dieW, dieH) {
-  let maxR = 0;
-  for (const row of rows) {
-    const x = Number(row[xCol]) * dieW;
-    const y = Number(row[yCol]) * dieH;
-    const r = Math.sqrt(x * x + y * y) + Math.sqrt(dieW * dieW + dieH * dieH) / 2;
-    if (r > maxR) maxR = r;
-  }
-  return Math.ceil((maxR * 2) / 25) * 25; // round up to nearest 25 mm
 }
 
 // ── Data processing ───────────────────────────────────────────────────────────
 
 function processData() {
   const { rows, cfg } = state;
-  const waferIds = [...new Set(rows.map((r) => r[cfg.waferCol]))].sort();
-
-  const wafer = createWafer({
-    diameter: cfg.diameter,
-    flat: { type: 'bottom', length: cfg.diameter * 0.2 },
-    orientation: 0,
-  });
-
-  const generated = generateDies(wafer, { width: cfg.dieW, height: cfg.dieH });
-  const clipped = clipDiesToWafer(generated, wafer, { width: cfg.dieW, height: cfg.dieH });
+  const waferIds = [...new Set(rows.map(r => r[cfg.waferCol]))].sort();
 
   const diesByWafer = {};
-  for (const waferId of waferIds) {
-    const waferRows = rows.filter((r) => r[cfg.waferCol] === waferId);
-    const rowMap = new Map(waferRows.map((r) => [`${Number(r[cfg.xCol])},${Number(r[cfg.yCol])}`, r]));
 
-    const enriched = clipped.map((die) => {
+  for (const waferId of waferIds) {
+    const waferRows = rows.filter(r => r[cfg.waferCol] === waferId);
+
+    // x,y columns contain prober step positions (die grid indices, not mm).
+    const data = waferRows.map(r => ({
+      x:   Number(r[cfg.xCol]),
+      y:   Number(r[cfg.yCol]),
+      bin: cfg.hbinCol ? Number(r[cfg.hbinCol]) : undefined,
+      value: cfg.valueCols[0] ? Number(r[cfg.valueCols[0]]) : undefined,
+    }));
+
+    const result = buildWaferMap({ data });
+
+    // Post-enrich with additional channels — die.i === prober x for centred grids.
+    const rowMap = new Map(waferRows.map(r => [`${r[cfg.xCol]},${r[cfg.yCol]}`, r]));
+    const dies = result.dies.map(die => {
       const row = rowMap.get(`${die.i},${die.j}`);
       if (!row) return { ...die, values: [], bins: [], metadata: {} };
       return {
         ...die,
-        values: cfg.valueCols.map((col) => Number(row[col])),
+        values: cfg.valueCols.map(col => Number(row[col])),
         bins: [
           cfg.hbinCol ? Number(row[cfg.hbinCol]) : 0,
-          cfg.sbinCol ? Number(row[cfg.sbinCol]) : 0,
-        ].filter((_, i) => i === 0 || cfg.sbinCol),
+          ...(cfg.sbinCol ? [Number(row[cfg.sbinCol])] : []),
+        ],
         metadata: {
           waferId,
-          customFields: Object.fromEntries(
-            state.headers.map((h) => [h, row[h]])
-          ),
+          customFields: Object.fromEntries(state.headers.map(h => [h, row[h]])),
         },
       };
     });
 
-    diesByWafer[waferId] = applyOrientation(enriched, wafer);
+    // All wafers share the same wafer geometry (use the first one).
+    if (!state.data.wafer) state.data.wafer = result.wafer;
+    diesByWafer[waferId] = dies;
   }
 
-  state.data = { waferIds, wafer, diesByWafer };
+  state.data = { waferIds, wafer: state.data.wafer, diesByWafer };
   state.ui.selectedWafers = new Set(waferIds.slice(0, Math.min(4, waferIds.length)));
 }
 
@@ -149,30 +136,27 @@ function renderPareto() {
     }
   }
 
-  const sorted = Object.entries(counts)
+  const sorted  = Object.entries(counts)
     .map(([bin, count]) => ({ bin: Number(bin), count }))
     .sort((a, b) => b.count - a.count);
-
-  const total = sorted.reduce((s, d) => s + d.count, 0);
+  const total   = sorted.reduce((s, d) => s + d.count, 0);
   let cum = 0;
-  const cumPct = sorted.map((d) => { cum += d.count; return +(100 * cum / total).toFixed(1); });
+  const cumPct  = sorted.map(d => { cum += d.count; return +(100 * cum / total).toFixed(1); });
 
   Plotly.react('chart-pareto', [
     {
       type: 'bar',
-      x: sorted.map((d) => `Bin ${d.bin}`),
-      y: sorted.map((d) => d.count),
-      marker: { color: sorted.map((d) => getColorScheme(state.ui.colorScheme).forBin(d.bin)) },
+      x: sorted.map(d => `Bin ${d.bin}`),
+      y: sorted.map(d => d.count),
+      marker: { color: sorted.map(d => getColorScheme(state.ui.colorScheme).forBin(d.bin)) },
       name: 'Count',
     },
     {
       type: 'scatter', mode: 'lines+markers',
-      x: sorted.map((d) => `Bin ${d.bin}`),
+      x: sorted.map(d => `Bin ${d.bin}`),
       y: cumPct,
-      yaxis: 'y2',
-      name: 'Cumulative %',
-      line: { color: '#555', width: 1.5 },
-      marker: { size: 5, color: '#555' },
+      yaxis: 'y2', name: 'Cumulative %',
+      line: { color: '#555', width: 1.5 }, marker: { size: 5, color: '#555' },
     },
   ], {
     title: { text: 'Bin Pareto (all wafers)', x: 0.02, font: { size: 13 } },
@@ -190,15 +174,12 @@ function renderPareto() {
 function renderYieldChart() {
   const { waferIds, diesByWafer } = state.data;
   const { passBin } = state.cfg;
-
-  // Collect all unique bins across all wafers
   const allBins = getUniqueBins(Object.values(diesByWafer).flat());
 
-  // Compute per-wafer, per-bin counts
-  const binsByWafer = {};
+  const binsByWafer   = {};
   const totalsByWafer = {};
   for (const waferId of waferIds) {
-    binsByWafer[waferId] = {};
+    binsByWafer[waferId]   = {};
     let total = 0;
     for (const die of diesByWafer[waferId]) {
       if (die.partial) continue;
@@ -209,7 +190,6 @@ function renderYieldChart() {
     totalsByWafer[waferId] = total;
   }
 
-  // Sort wafers by yield (pass bin %) desc, or alphabetically if no pass bin
   const sortedWafers = [...waferIds].sort((a, b) => {
     if (passBin === null) return a.localeCompare(b);
     const ya = totalsByWafer[a] ? (binsByWafer[a][passBin] ?? 0) / totalsByWafer[a] : 0;
@@ -217,43 +197,34 @@ function renderYieldChart() {
     return yb - ya;
   });
 
-  const traces = allBins.map((bin) => ({
-    type: 'bar',
-    name: `Bin ${bin}`,
+  const selectedSet = state.ui.selectedWafers;
+  const traces = allBins.map(bin => ({
+    type: 'bar', name: `Bin ${bin}`,
     x: sortedWafers,
-    y: sortedWafers.map((w) => binsByWafer[w][bin] ?? 0),
-    marker: { color: getColorScheme(state.ui.colorScheme).forBin(bin) },
+    y: sortedWafers.map(w => binsByWafer[w][bin] ?? 0),
+    marker: {
+      color:   getColorScheme(state.ui.colorScheme).forBin(bin),
+      opacity: sortedWafers.map(w => selectedSet.has(w) ? 1 : 0.35),
+    },
   }));
 
-  // Highlight selected wafers via opacity
-  const selectedSet = state.ui.selectedWafers;
-  traces.forEach((trace) => {
-    trace.marker = {
-      ...trace.marker,
-      opacity: sortedWafers.map((w) => selectedSet.has(w) ? 1 : 0.35),
-    };
-  });
-
   Plotly.react('chart-yield', traces, {
-    title: { text: passBin !== null ? `Bin Distribution (pass = Bin ${passBin})` : 'Bin Distribution per Wafer', x: 0.02, font: { size: 13 } },
-    barmode: 'stack',
-    xaxis: { title: 'Wafer' },
-    yaxis: { title: 'Die count' },
-    legend: { orientation: 'h', y: -0.2 },
-    margin: { t: 36, l: 48, r: 20, b: 70 },
+    title:    { text: passBin !== null ? `Bin Distribution (pass = Bin ${passBin})` : 'Bin Distribution per Wafer', x: 0.02, font: { size: 13 } },
+    barmode:  'stack',
+    xaxis:    { title: 'Wafer' },
+    yaxis:    { title: 'Die count' },
+    legend:   { orientation: 'h', y: -0.2 },
+    margin:   { t: 36, l: 48, r: 20, b: 70 },
     plot_bgcolor: '#f9f9f9',
     clickmode: 'event',
   }, { responsive: true });
 
-  document.getElementById('chart-yield').on('plotly_click', (event) => {
+  document.getElementById('chart-yield').on('plotly_click', event => {
     const waferId = event.points[0].x;
-    if (state.ui.selectedWafers.has(waferId)) {
-      state.ui.selectedWafers.delete(waferId);
-    } else {
-      state.ui.selectedWafers.add(waferId);
-    }
+    if (state.ui.selectedWafers.has(waferId)) state.ui.selectedWafers.delete(waferId);
+    else state.ui.selectedWafers.add(waferId);
     refreshGallery();
-    renderYieldChart(); // re-render to update opacity
+    renderYieldChart();
   });
 }
 
@@ -263,9 +234,7 @@ function refreshGallery() {
   const { view } = state.ui;
   document.getElementById('btn-view-maps').classList.toggle('active', view === 'maps');
   document.getElementById('btn-view-bingallery').classList.toggle('active', view === 'bingallery');
-
   updateWaferChips();
-
   if (view === 'maps') renderWafermapGallery();
   else renderBinGallery();
 }
@@ -281,17 +250,7 @@ function renderWafermapGallery() {
     return;
   }
 
-  // Sync grid cards to current selection
-  const existing = new Set([...gallery.querySelectorAll('.map-card')].map((el) => el.dataset.wafer));
-  const wanted = new Set(selected);
-
-  // Remove cards no longer selected
-  for (const el of gallery.querySelectorAll('.map-card')) {
-    if (!wanted.has(el.dataset.wafer)) el.remove();
-  }
-
-  // Add cards for new selections (in order)
-  gallery.innerHTML = selected.map((waferId) => `
+  gallery.innerHTML = selected.map(waferId => `
     <div class="map-card" data-wafer="${waferId}">
       <div class="map-card-header">
         <span class="map-card-title">${waferId}</span>
@@ -310,65 +269,58 @@ function renderWafermapGallery() {
     });
   }
 
-  // Build and render each wafermap
   const dies4map = plotMode === 'value' && valueChannel > 0
-    ? (dies) => dies.map((die) => {
+    ? dies => dies.map(die => {
         const v = die.values ?? [];
         const reordered = [...v];
         reordered[0] = v[valueChannel] ?? v[0];
         return { ...die, values: reordered };
       })
-    : (dies) => dies;
+    : dies => dies;
 
   for (const waferId of selected) {
     const dies = diesByWafer[waferId];
     if (!dies) continue;
 
     const scene = buildScene(wafer, dies4map(dies), [], {
-      plotMode,
-      colorScheme,
-      showRingBoundaries: showRings,
+      plotMode, colorScheme,
+      showRingBoundaries:     showRings,
       showQuadrantBoundaries: showQuadrants,
-      showXYIndicator: showXY,
+      showXYIndicator:        showXY,
       highlightBin,
     });
 
     const { data, layout } = toPlotly(scene);
-    Plotly.react(`map-${waferId}`, data, {
-      ...layout, margin: { t: 6, l: 6, r: 44, b: 6 },
-    }, { responsive: true });
-
-    renderMapStats(`mapstats-${waferId}`, dies, wafer);
+    Plotly.react(`map-${waferId}`, data, { ...layout, margin: { t: 6, l: 6, r: 44, b: 6 } }, { responsive: true });
+    renderMapStats(`mapstats-${waferId}`, dies);
   }
 }
 
-function renderMapStats(targetId, dies, wafer) {
-  const fullDies = dies.filter((d) => !d.partial);
+function renderMapStats(targetId, dies) {
+  const fullDies  = dies.filter(d => !d.partial);
   const binCounts = {};
   for (const die of fullDies) {
     const bin = die.bins?.[0] ?? 0;
     binCounts[bin] = (binCounts[bin] ?? 0) + 1;
   }
-  const rows = Object.entries(binCounts)
+  document.getElementById(targetId).innerHTML = Object.entries(binCounts)
     .sort(([a], [b]) => Number(a) - Number(b))
     .map(([bin, count]) => {
       const pct = (100 * count / fullDies.length).toFixed(1);
       return `<span class="stat-chip" style="border-color:${getColorScheme(state.ui.colorScheme).forBin(Number(bin))}">B${bin}: ${count} (${pct}%)</span>`;
     }).join('');
-  document.getElementById(targetId).innerHTML = rows;
 }
 
 function renderBinGallery() {
-  const gallery = document.getElementById('wafermap-gallery');
+  const gallery       = document.getElementById('wafermap-gallery');
   const { diesByWafer, wafer } = state.data;
   const { colorScheme, showRings } = state.ui;
+  const allDies       = Object.values(diesByWafer).flat();
+  const uniqueBins    = getUniqueBins(allDies);
+  const allWaferDies  = Object.values(diesByWafer);
+  const numWafers     = allWaferDies.length;
 
-  const allDies = Object.values(diesByWafer).flat();
-  const uniqueBins = getUniqueBins(allDies);
-  const allWaferDies = Object.values(diesByWafer);
-  const numWafers = allWaferDies.length;
-
-  gallery.innerHTML = uniqueBins.map((bin) => `
+  gallery.innerHTML = uniqueBins.map(bin => `
     <div class="map-card" data-bin="${bin}">
       <div class="map-card-header">
         <span class="map-card-title">Bin ${bin}</span>
@@ -381,25 +333,21 @@ function renderBinGallery() {
 
   for (const bin of uniqueBins) {
     const aggregated = aggregateBinCounts(allWaferDies, bin);
-    const totalHits = aggregated.reduce((s, d) => s + (d.values?.[0] ?? 0), 0);
-    const affected = aggregated.filter((d) => (d.values?.[0] ?? 0) > 0).length;
+    const totalHits  = aggregated.reduce((s, d) => s + (d.values?.[0] ?? 0), 0);
+    const affected   = aggregated.filter(d => (d.values?.[0] ?? 0) > 0).length;
 
     const scene = buildScene(wafer, aggregated, [], {
-      plotMode: 'value',
-      valueRange: [0, numWafers],
-      colorScheme,
-      showRingBoundaries: showRings,
+      plotMode: 'value', valueRange: [0, numWafers],
+      colorScheme, showRingBoundaries: showRings,
     });
 
     const { data, layout } = toPlotly(scene);
-    Plotly.react(`map-bin-${bin}`, data, {
-      ...layout, margin: { t: 6, l: 6, r: 44, b: 6 },
-    }, { responsive: true });
+    Plotly.react(`map-bin-${bin}`, data, { ...layout, margin: { t: 6, l: 6, r: 44, b: 6 } }, { responsive: true });
 
-    const el = document.getElementById(`binsub-${bin}`);
-    if (el) el.textContent = `${affected} positions`;
+    const subEl   = document.getElementById(`binsub-${bin}`);
     const statsEl = document.getElementById(`mapstats-bin-${bin}`);
-    if (statsEl) statsEl.innerHTML =
+    if (subEl)   subEl.textContent   = `${affected} positions`;
+    if (statsEl) statsEl.innerHTML   =
       `<span class="stat-chip">Total: ${totalHits} occurrences across ${numWafers} wafers</span>` +
       `<span class="stat-chip">Scale: 0 – ${numWafers}</span>`;
   }
@@ -412,8 +360,7 @@ function updateWaferChips() {
   if (!bar) return;
   if (state.ui.view === 'bingallery') { bar.innerHTML = ''; return; }
 
-  const sorted = [...state.ui.selectedWafers].sort();
-  bar.innerHTML = sorted.map((w) =>
+  bar.innerHTML = [...state.ui.selectedWafers].sort().map(w =>
     `<span class="chip">${w} <button class="chip-remove" data-wafer="${w}">×</button></span>`
   ).join('');
 
@@ -431,28 +378,22 @@ function populateConfigForm() {
 
   const colSelect = (id, value) => {
     const el = document.getElementById(id);
-    el.innerHTML = ['', ...headers].map((h) => `<option${h === value ? ' selected' : ''}>${h}</option>`).join('');
+    el.innerHTML = ['', ...headers].map(h => `<option${h === value ? ' selected' : ''}>${h}</option>`).join('');
   };
 
   colSelect('cfg-wafer', cfg.waferCol);
-  colSelect('cfg-x', cfg.xCol);
-  colSelect('cfg-y', cfg.yCol);
-  colSelect('cfg-hbin', cfg.hbinCol);
-  colSelect('cfg-sbin', cfg.sbinCol);
+  colSelect('cfg-x',     cfg.xCol);
+  colSelect('cfg-y',     cfg.yCol);
+  colSelect('cfg-hbin',  cfg.hbinCol);
+  colSelect('cfg-sbin',  cfg.sbinCol);
 
-  document.getElementById('cfg-die-w').value = cfg.dieW;
-  document.getElementById('cfg-die-h').value = cfg.dieH;
-  document.getElementById('cfg-diameter').value = cfg.diameter;
-
-  // Value columns checkboxes
   const vcBox = document.getElementById('cfg-valuecols');
-  vcBox.innerHTML = headers.map((h) => `
+  vcBox.innerHTML = headers.map(h => `
     <label class="check-label">
       <input type="checkbox" value="${h}"${cfg.valueCols.includes(h) ? ' checked' : ''}> ${h}
     </label>
   `).join('');
 
-  // Pass bin — populated after data is processed
   document.getElementById('config-section').hidden = false;
 }
 
@@ -462,27 +403,21 @@ function readConfig() {
   state.cfg.yCol      = document.getElementById('cfg-y').value;
   state.cfg.hbinCol   = document.getElementById('cfg-hbin').value;
   state.cfg.sbinCol   = document.getElementById('cfg-sbin').value;
-  state.cfg.dieW      = Number(document.getElementById('cfg-die-w').value) || 10;
-  state.cfg.dieH      = Number(document.getElementById('cfg-die-h').value) || 10;
-  state.cfg.diameter  = Number(document.getElementById('cfg-diameter').value) || 200;
-  state.cfg.valueCols = [...document.querySelectorAll('#cfg-valuecols input:checked')].map((el) => el.value);
+  state.cfg.valueCols = [...document.querySelectorAll('#cfg-valuecols input:checked')].map(el => el.value);
 }
 
 function populatePassBinSelector() {
   const allDies = Object.values(state.data.diesByWafer).flat();
-  const bins = getUniqueBins(allDies);
-  const sel = document.getElementById('cfg-passbin');
+  const bins    = getUniqueBins(allDies);
+  const sel     = document.getElementById('cfg-passbin');
   sel.innerHTML = `<option value="">None</option>` +
-    bins.map((b) => `<option value="${b}">Bin ${b}</option>`).join('');
-  // Default to the numerically lowest bin as a guess at "pass"
+    bins.map(b => `<option value="${b}">Bin ${b}</option>`).join('');
   if (bins.length) sel.value = String(bins[0]);
   state.cfg.passBin = bins.length ? bins[0] : null;
 }
 
 function populateMapControls() {
-  // Mode
-  const modeEl = document.getElementById('map-mode');
-  modeEl.innerHTML = `
+  document.getElementById('map-mode').innerHTML = `
     <option value="hardbin">Hard Bin</option>
     <option value="softbin">Soft Bin</option>
     <option value="value">Test Value</option>
@@ -490,55 +425,40 @@ function populateMapControls() {
     <option value="stacked_bins">Stacked Bins</option>
   `;
 
-  // Channel
   const chanEl = document.getElementById('map-channel');
   chanEl.innerHTML = state.cfg.valueCols.map((col, i) =>
     `<option value="${i}">${col}</option>`
   ).join('');
   chanEl.parentElement.hidden = !state.cfg.valueCols.length;
 
-  // Colour scheme
   const colorEl = document.getElementById('map-color');
   colorEl.innerHTML = listColorSchemes()
     .filter(({ name }) => name !== 'color')
     .map(({ name, label }) => `<option value="${name}"${name === state.ui.colorScheme ? ' selected' : ''}>${label}</option>`)
     .join('');
 
-  // Highlight bin
   const allDies = Object.values(state.data.diesByWafer).flat();
-  const bins = getUniqueBins(allDies);
-  const hlEl = document.getElementById('map-highlight');
+  const bins    = getUniqueBins(allDies);
+  const hlEl    = document.getElementById('map-highlight');
   hlEl.innerHTML = `<option value="">None</option>` +
-    bins.map((b) => `<option value="${b}">Bin ${b}</option>`).join('');
+    bins.map(b => `<option value="${b}">Bin ${b}</option>`).join('');
 }
 
 // ── Event wiring ──────────────────────────────────────────────────────────────
 
 function wireEvents() {
-  // File drop / pick
-  const dropZone = document.getElementById('drop-zone');
+  const dropZone  = document.getElementById('drop-zone');
   const fileInput = document.getElementById('file-input');
 
-  dropZone.addEventListener('click', () => fileInput.click());
-  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('click',    () => fileInput.click());
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
   dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-  dropZone.addEventListener('drop', (e) => {
+  dropZone.addEventListener('drop', e => {
     e.preventDefault();
     dropZone.classList.remove('drag-over');
     handleFile(e.dataTransfer.files[0]);
   });
   fileInput.addEventListener('change', () => handleFile(fileInput.files[0]));
-
-  // Config form
-  document.getElementById('btn-suggest-diameter').addEventListener('click', () => {
-    const dieW = Number(document.getElementById('cfg-die-w').value) || 10;
-    const dieH = Number(document.getElementById('cfg-die-h').value) || 10;
-    const xCol = document.getElementById('cfg-x').value;
-    const yCol = document.getElementById('cfg-y').value;
-    if (xCol && yCol) {
-      document.getElementById('cfg-diameter').value = suggestDiameter(state.rows, xCol, yCol, dieW, dieH);
-    }
-  });
 
   document.getElementById('btn-process').addEventListener('click', () => {
     readConfig();
@@ -546,19 +466,18 @@ function wireEvents() {
     populatePassBinSelector();
     populateMapControls();
     document.getElementById('analytics-section').hidden = false;
-    document.getElementById('map-section').hidden = false;
+    document.getElementById('map-section').hidden       = false;
     renderPareto();
     renderYieldChart();
     refreshGallery();
   });
 
-  document.getElementById('cfg-passbin').addEventListener('change', (e) => {
+  document.getElementById('cfg-passbin').addEventListener('change', e => {
     const v = e.target.value;
     state.cfg.passBin = v === '' ? null : Number(v);
     renderYieldChart();
   });
 
-  // View tabs
   document.getElementById('btn-view-maps').addEventListener('click', () => {
     state.ui.view = 'maps';
     document.getElementById('wafer-selection-bar').hidden = false;
@@ -570,9 +489,8 @@ function wireEvents() {
     refreshGallery();
   });
 
-  // Wafer select/clear
   document.getElementById('btn-select-all').addEventListener('click', () => {
-    state.data.waferIds.forEach((w) => state.ui.selectedWafers.add(w));
+    state.data.waferIds.forEach(w => state.ui.selectedWafers.add(w));
     refreshGallery();
     renderYieldChart();
   });
@@ -582,32 +500,31 @@ function wireEvents() {
     renderYieldChart();
   });
 
-  // Map controls
-  document.getElementById('map-mode').addEventListener('change', (e) => {
+  document.getElementById('map-mode').addEventListener('change', e => {
     state.ui.plotMode = e.target.value;
-    const isValue = e.target.value === 'value';
-    document.getElementById('map-channel-group').hidden = !isValue || !state.cfg.valueCols.length;
+    document.getElementById('map-channel-group').hidden =
+      e.target.value !== 'value' || !state.cfg.valueCols.length;
     refreshGallery();
   });
-  document.getElementById('map-channel').addEventListener('change', (e) => {
+  document.getElementById('map-channel').addEventListener('change', e => {
     state.ui.valueChannel = Number(e.target.value);
     refreshGallery();
   });
-  document.getElementById('map-color').addEventListener('change', (e) => {
+  document.getElementById('map-color').addEventListener('change', e => {
     state.ui.colorScheme = e.target.value;
     renderPareto();
     renderYieldChart();
     refreshGallery();
   });
-  document.getElementById('map-highlight').addEventListener('change', (e) => {
+  document.getElementById('map-highlight').addEventListener('change', e => {
     state.ui.highlightBin = e.target.value === '' ? undefined : Number(e.target.value);
     refreshGallery();
   });
 
   for (const [id, key] of [
-    ['btn-rings', 'showRings'],
+    ['btn-rings',     'showRings'],
     ['btn-quadrants', 'showQuadrants'],
-    ['btn-xy', 'showXY'],
+    ['btn-xy',        'showXY'],
   ]) {
     document.getElementById(id).addEventListener('click', () => {
       state.ui[key] = !state.ui[key];
@@ -621,15 +538,14 @@ function handleFile(file) {
   if (!file) return;
   document.getElementById('file-name').textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = e => {
     const { headers, rows } = parseCsv(e.target.result);
     state.headers = headers;
-    state.rows = rows;
+    state.rows    = rows;
     const detected = autoDetect(headers, rows);
     Object.assign(state.cfg, detected);
-    state.cfg.diameter = suggestDiameter(rows, detected.xCol, detected.yCol, state.cfg.dieW, state.cfg.dieH);
     document.getElementById('analytics-section').hidden = true;
-    document.getElementById('map-section').hidden = true;
+    document.getElementById('map-section').hidden       = true;
     populateConfigForm();
   };
   reader.readAsText(file);

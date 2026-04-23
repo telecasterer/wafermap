@@ -6,42 +6,46 @@ import { createWafer } from '../core/wafer.js';
 import { generateDies } from '../core/dies.js';
 import { clipDiesToWafer, applyOrientation } from '../core/transforms.js';
 import { inferWaferFromXY } from '../core/inference/wafer.js';
-import { inferDiePitch } from '../core/inference/pitch.js';
-import { inferGrid } from '../core/inference/grid.js';
-import { buildScene, type Scene, type BuildSceneOptions } from './buildScene.js';
+import { resolveGridPitch } from '../core/inference/pitch.js';
+import { assignGridIndices } from '../core/inference/grid.js';
+import { buildScene, type Scene, type BuildSceneOptions, type PlotMode } from './buildScene.js';
 
 // ── Public input types ────────────────────────────────────────────────────────
 
-/** A single data point.  Supply whatever fields you have; the rest are inferred. */
+/**
+ * A single data point from wafer test equipment.
+ * x and y are **die grid positions** (prober step coordinates) — integers
+ * such as −7, 0, 5.  They are NOT millimetre values.
+ */
 export interface WaferMapPoint {
+  /** Die grid X position (prober step coordinate). */
   x: number;
+  /** Die grid Y position (prober step coordinate). */
   y: number;
   value?: number;
   bin?: number;
-  /** Pre-computed grid column index.  When provided for all points, skips grid inference. */
-  i?: number;
-  /** Pre-computed grid row index.  When provided for all points, skips grid inference. */
-  j?: number;
 }
 
 /** Wafer geometry parameters — all optional; any omitted fields are inferred. */
 export interface WaferOptions {
+  /** Wafer diameter in mm.  Inferred from grid extent × pitch when omitted. */
   diameter?: number;
-  center?: { x: number; y: number };
   flat?: WaferFlat;
   /** Degrees, default 0. */
   orientation?: number;
   metadata?: WaferMetadata;
 }
 
-/** Die geometry parameters — all optional; any omitted fields are inferred. */
+/**
+ * Die geometry parameters — both in mm, both optional.
+ * When omitted, dimensions are estimated from the grid layout using the
+ * circular-wafer constraint (see {@link resolveGridPitch}).
+ */
 export interface DieOptions {
+  /** Die width in mm (= X pitch). */
   width?: number;
+  /** Die height in mm (= Y pitch). */
   height?: number;
-  /** Grid pitch in X.  Defaults to `width` when omitted. */
-  pitchX?: number;
-  /** Grid pitch in Y.  Defaults to `height` when omitted. */
-  pitchY?: number;
 }
 
 /** Input accepted by {@link buildWaferMap}.  All fields are optional. */
@@ -53,7 +57,7 @@ export interface WaferMapInput {
   dies?: Die[];
 }
 
-/** Options forwarded to {@link buildScene} plus a debug flag. */
+/** Options forwarded to {@link buildScene}. */
 export interface WaferMapOptions extends BuildSceneOptions {
   debug?: boolean;
 }
@@ -64,20 +68,30 @@ export interface WaferMapResult {
   wafer: Wafer;
   dies: Die[];
   scene: Scene;
+  /**
+   * Coordinate space of Die.x / Die.y and wafer dimensions:
+   * - **'mm'**         — at least one physical dimension was provided (or could
+   *                      be inferred from wafer diameter / die size); all spatial
+   *                      values are in real-world millimetres.
+   * - **'normalised'** — only grid positions were supplied; coordinates are
+   *                      proportionally correct (aspect ratio preserved) but are
+   *                      not in physical mm.  pitchX = 1 unit by convention.
+   */
+  units: 'mm' | 'normalised';
   inference: {
-    wafer: { confidence: number; method: string };
-    diePitch: { confidence: number };
-    grid: { confidence: number };
+    wafer:    { confidence: number; method: string };
+    diePitch: { confidence: number; units: 'mm' | 'normalised' };
+    grid:     { confidence: number };
   };
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 interface Normalized {
-  data: WaferMapPoint[];
-  waferOpts: WaferOptions | undefined;
-  dieOpts: DieOptions | undefined;
-  explicitDies: Die[] | undefined;
+  data:         WaferMapPoint[];
+  waferOpts:    WaferOptions | undefined;
+  dieOpts:      DieOptions   | undefined;
+  explicitDies: Die[]        | undefined;
 }
 
 function normalizeInput(input: WaferMapPoint[] | WaferMapInput): Normalized {
@@ -85,32 +99,23 @@ function normalizeInput(input: WaferMapPoint[] | WaferMapInput): Normalized {
     return { data: input, waferOpts: undefined, dieOpts: undefined, explicitDies: undefined };
   }
   return {
-    data: input.data ?? [],
-    waferOpts: input.wafer,
-    dieOpts: input.die,
+    data:         input.data  ?? [],
+    waferOpts:    input.wafer,
+    dieOpts:      input.die,
     explicitDies: input.dies,
   };
 }
 
-function resolvePitch(
-  dieOpts: DieOptions | undefined,
-  points: Array<{ x: number; y: number }>,
-  inferenceOut: { diePitch: { confidence: number } },
-): { pitchX: number; pitchY: number } {
-  const userX = dieOpts?.pitchX ?? dieOpts?.width;
-  const userY = dieOpts?.pitchY ?? dieOpts?.height;
-
-  if (userX !== undefined && userY !== undefined) {
-    return { pitchX: userX, pitchY: userY };
-  }
-
-  const pi = inferDiePitch(points);
-  inferenceOut.diePitch = { confidence: pi.confidence };
-
+function attachData(die: Die, pt: WaferMapPoint): Die {
   return {
-    pitchX: userX ?? pi.pitchX,
-    pitchY: userY ?? pi.pitchY,
+    ...die,
+    ...(pt.value !== undefined ? { values: [pt.value] } : {}),
+    ...(pt.bin   !== undefined ? { bins:   [pt.bin]   } : {}),
   };
+}
+
+function autoPlotMode(data: WaferMapPoint[], opts: BuildSceneOptions): PlotMode {
+  return opts.plotMode ?? (data.some(d => d.value !== undefined) ? 'value' : 'hardbin');
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────────
@@ -118,21 +123,22 @@ function resolvePitch(
 /**
  * Build a complete wafer map from any level of input.
  *
- * Pass what you have — an array of XY data points, a partially specified
- * wafer config, pre-built dies, or any combination.  The function infers
- * whatever is missing and returns a fully rendered scene ready for Plotly.
+ * `x` and `y` in each data point are **die grid positions** (prober step
+ * coordinates — integers like −7, 0, 5), not millimetre values.  Supply
+ * whatever geometry you have; the library infers the rest.
  *
- * @example Minimal — XY values only:
+ * @example Minimal — grid positions + values only (all geometry inferred):
  * ```ts
  * const result = buildWaferMap([
- *   { x: 10, y: 20, value: 0.95 },
- *   { x: 20, y: 20, value: 0.87 },
+ *   { x:  0, y:  0, value: 0.95 },
+ *   { x:  1, y:  0, value: 0.87 },
+ *   { x:  0, y: -1, value: 0.91 },
  * ]);
  * const { data, layout } = toPlotly(result.scene);
  * Plotly.react('chart', data, layout);
  * ```
  *
- * @example With partial geometry hints:
+ * @example With die size (recommended — enables mm coordinates):
  * ```ts
  * const result = buildWaferMap({
  *   data,
@@ -141,9 +147,15 @@ function resolvePitch(
  * });
  * ```
  *
- * @example Fully specified (pre-built dies):
+ * @example Post-enrich for multiple test channels:
  * ```ts
- * const result = buildWaferMap({ wafer, dies });
+ * const result = buildWaferMap({ data: primaryData, wafer, die });
+ * const rowMap = new Map(rows.map(r => [`${r.x},${r.y}`, r]));
+ * const dies = result.dies.map(d => {
+ *   const row = rowMap.get(`${d.i},${d.j}`);  // d.i === original x for centred grids
+ *   if (!row) return d;
+ *   return { ...d, values: [+row.testA, +row.testB], bins: [+row.hbin, +row.sbin] };
+ * });
  * ```
  */
 export function buildWaferMap(
@@ -154,125 +166,108 @@ export function buildWaferMap(
   const { debug: _debug, ...sceneOpts } = options ?? {};
 
   const inference = {
-    wafer: { confidence: 1.0, method: 'provided' },
-    diePitch: { confidence: 1.0 },
-    grid: { confidence: 1.0 },
+    wafer:    { confidence: 1.0, method: 'provided' },
+    diePitch: { confidence: 1.0, units: 'mm' as 'mm' | 'normalised' },
+    grid:     { confidence: 1.0 },
   };
 
-  const points = norm.data.map(d => ({ x: d.x, y: d.y }));
+  // ── Explicit dies path ─────────────────────────────────────────────────────
+  // Pre-built dies are used as-is; data points are matched by die.i,j directly.
 
-  // ── Step 1: Resolve wafer ──────────────────────────────────────────────────
+  if (norm.explicitDies) {
+    let dies = norm.explicitDies;
 
+    if (norm.data.length > 0) {
+      const lookup = new Map(norm.data.map(d => [`${d.x},${d.y}`, d]));
+      dies = dies.map(die => {
+        const pt = lookup.get(`${die.i},${die.j}`);
+        return pt ? attachData(die, pt) : die;
+      });
+    }
+
+    const diameter = norm.waferOpts?.diameter ?? 300;
+    const wafer = createWafer({
+      diameter,
+      flat:        norm.waferOpts?.flat,
+      orientation: norm.waferOpts?.orientation ?? 0,
+      metadata:    norm.waferOpts?.metadata,
+    });
+
+    const scene = buildScene(wafer, dies, [], {
+      ...sceneOpts,
+      plotMode: autoPlotMode(norm.data, sceneOpts),
+    });
+
+    return { wafer, dies, scene, units: 'mm', inference };
+  }
+
+  // ── Grid-position path ─────────────────────────────────────────────────────
+
+  const gridPoints = norm.data.map(d => ({ x: d.x, y: d.y }));
+
+  // Step 1: Resolve pitch — mm or normalised depending on available context.
+  const pitchResult = resolveGridPitch(
+    gridPoints,
+    norm.dieOpts,
+    norm.waferOpts?.diameter,
+  );
+  inference.diePitch = { confidence: pitchResult.confidence, units: pitchResult.units };
+  const { pitchX, pitchY } = pitchResult;
+  const units = pitchResult.units;
+
+  // Step 2: Compute grid offset (integer centroid) so the generated grid is
+  // centred at the wafer's physical origin (0,0).
+  const ga = assignGridIndices(gridPoints);
+  inference.grid = { confidence: ga.confidence };
+  const { offsetX, offsetY } = ga;
+
+  // Step 3: Infer wafer diameter when not provided.
+  // Convert grid indices to physical positions for the inference function.
   let waferDiameter = norm.waferOpts?.diameter;
-  let waferCenter = norm.waferOpts?.center;
 
   if (waferDiameter === undefined) {
-    const src = norm.explicitDies?.length
-      ? norm.explicitDies.map(d => ({ x: d.x, y: d.y }))
-      : points;
-
-    if (src.length > 0) {
-      const wi = inferWaferFromXY(src);
+    if (ga.indices.length > 0) {
+      const physPoints = ga.indices.map(({ i, j }) => ({ x: i * pitchX, y: j * pitchY }));
+      const wi = inferWaferFromXY(physPoints);
       waferDiameter = wi.diameter;
-      if (waferCenter === undefined) waferCenter = wi.center;
       inference.wafer = { confidence: wi.confidence, method: wi.method };
     } else {
-      waferDiameter = 300;
+      // No data — use a sensible default.
+      waferDiameter = units === 'mm' ? 300 : 30;
       inference.wafer = { confidence: 0, method: 'default' };
     }
   }
 
-  waferCenter ??= { x: 0, y: 0 };
-
-  let wafer = createWafer({
-    diameter: waferDiameter,
-    center: waferCenter,
-    flat: norm.waferOpts?.flat,
+  const wafer = createWafer({
+    diameter:    waferDiameter,
+    flat:        norm.waferOpts?.flat,
     orientation: norm.waferOpts?.orientation ?? 0,
-    metadata: norm.waferOpts?.metadata,
+    metadata:    norm.waferOpts?.metadata,
   });
 
-  // ── Step 2: Resolve dies ───────────────────────────────────────────────────
+  // Step 4: Generate and clip the full die grid.
+  const dieConfig = { width: pitchX, height: pitchY };
+  const allDies   = generateDies(wafer, dieConfig);
+  let dies        = clipDiesToWafer(allDies, wafer, dieConfig);
 
-  let dies: Die[];
-
-  if (norm.explicitDies) {
-    // User supplied pre-built dies — use them directly.
-    dies = norm.explicitDies;
-
-    if (points.length > 0) {
-      // Attach data by XY position match.
-      const xyLookup = new Map(norm.data.map(d => [`${d.x},${d.y}`, d]));
-      dies = dies.map(die => {
-        const pt = xyLookup.get(`${die.x},${die.y}`);
-        if (!pt) return die;
-        return {
-          ...die,
-          ...(pt.value !== undefined ? { values: [pt.value] } : {}),
-          ...(pt.bin !== undefined ? { bins: [pt.bin] } : {}),
-        };
-      });
-    }
-  } else if (points.length > 0) {
-    // Derive die geometry, generate grid, attach data.
-    const pitch = resolvePitch(norm.dieOpts, points, inference);
-    const width = norm.dieOpts?.width ?? pitch.pitchX;
-    const height = norm.dieOpts?.height ?? pitch.pitchY;
-    const dieConfig = { width, height };
-
-    // Build (i,j) → data lookup.
-    const allHaveIJ = norm.data.length > 0 && norm.data.every(d => d.i !== undefined && d.j !== undefined);
-    let ijLookup: Map<string, WaferMapPoint>;
-
-    if (allHaveIJ) {
-      ijLookup = new Map(norm.data.map(d => [`${d.i},${d.j}`, d]));
-    } else {
-      const gi = inferGrid(points, pitch, wafer.center);
-      inference.grid = { confidence: gi.confidence };
-
-      // Adopt corrected grid origin unless caller pinned the centre.
-      if (!norm.waferOpts?.center) {
-        wafer = { ...wafer, center: gi.center };
-      }
-
-      ijLookup = new Map();
-      for (let k = 0; k < gi.indices.length; k++) {
-        const { i, j } = gi.indices[k];
-        ijLookup.set(`${i},${j}`, norm.data[k]);
-      }
-    }
-
-    const allDies = generateDies(wafer, dieConfig);
-    dies = clipDiesToWafer(allDies, wafer, dieConfig);
-
+  // Step 5: Attach data.
+  // die.i = origX − offsetX, so origX = die.i + offsetX.
+  // For grids centred at (0,0) (offsetX = 0), die.i === original x directly.
+  if (norm.data.length > 0) {
+    const lookup = new Map(norm.data.map(d => [`${d.x},${d.y}`, d]));
     dies = dies.map(die => {
-      const pt = ijLookup.get(`${die.i},${die.j}`);
-      if (!pt) return die;
-      return {
-        ...die,
-        ...(pt.value !== undefined ? { values: [pt.value] } : {}),
-        ...(pt.bin !== undefined ? { bins: [pt.bin] } : {}),
-      };
+      const pt = lookup.get(`${die.i + offsetX},${die.j + offsetY}`);
+      return pt ? attachData(die, pt) : die;
     });
-  } else {
-    // No data — generate an empty clipped grid.
-    const width = norm.dieOpts?.width ?? norm.dieOpts?.pitchX ?? 10;
-    const height = norm.dieOpts?.height ?? norm.dieOpts?.pitchY ?? 10;
-    const dieConfig = { width, height };
-    const allDies = generateDies(wafer, dieConfig);
-    dies = clipDiesToWafer(allDies, wafer, dieConfig);
   }
 
-  // ── Step 3: Orientation + scene ────────────────────────────────────────────
-
+  // Step 6: Apply orientation and build scene.
   dies = applyOrientation(dies, wafer);
 
-  // Auto-detect plot mode if not explicitly set.
-  const plotMode =
-    sceneOpts.plotMode ??
-    (norm.data.some(d => d.value !== undefined) ? 'value' : 'hardbin');
+  const scene = buildScene(wafer, dies, [], {
+    ...sceneOpts,
+    plotMode: autoPlotMode(norm.data, sceneOpts),
+  });
 
-  const scene = buildScene(wafer, dies, [], { ...sceneOpts, plotMode });
-
-  return { wafer, dies, scene, inference };
+  return { wafer, dies, scene, units, inference };
 }

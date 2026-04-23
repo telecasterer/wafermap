@@ -1,36 +1,36 @@
 import { buildWaferMap, toPlotly } from 'wafermap';
 
-// ── Load CSV ──────────────────────────────────────────────────────────────────
-
 async function loadCsv(path) {
   const text = await (await fetch(path)).text();
   const [header, ...lines] = text.trim().split(/\r?\n/);
   const cols = header.split(',');
   return lines.filter(Boolean).map(line => {
     const vals = line.split(',');
-    return Object.fromEntries(cols.map((c, i) => [c, Number(vals[i])]));
+    return Object.fromEntries(cols.map((c, i) => [c, vals[i]]));
   });
 }
 
 // ── Render a single panel ─────────────────────────────────────────────────────
 
 function renderPanel(chartId, bodyId, result, provided) {
-  const { wafer, dies, scene, inference } = result;
+  const { wafer, dies, scene, inference, units } = result;
 
-  // Chart
   const { data, layout } = toPlotly(scene);
   Plotly.react(chartId, data, {
     ...layout,
     margin: { t: 6, l: 6, r: 44, b: 6 },
   }, { responsive: true });
 
-  // Body
   const dieW  = dies[0]?.width  ?? '—';
   const dieH  = dies[0]?.height ?? '—';
   const total = dies.length;
   const withData = dies.filter(d => d.values?.length).length;
 
-  const tag = (field) => provided.has(field)
+  const unitsBadge = units === 'mm'
+    ? '<span class="tag tag-provided">mm</span>'
+    : '<span class="tag tag-inferred">normalised</span>';
+
+  const tag = field => provided.has(field)
     ? '<span class="tag tag-provided">given</span>'
     : '<span class="tag tag-inferred">inferred</span>';
 
@@ -55,9 +55,9 @@ function renderPanel(chartId, bodyId, result, provided) {
     <div>
       <div class="section-label">Resolved geometry</div>
       <table class="kv-table">
-        <tr><td>Diameter</td><td>${wafer.diameter} mm &nbsp;${tag('diameter')}</td></tr>
-        <tr><td>Center</td><td>(${wafer.center.x.toFixed(1)}, ${wafer.center.y.toFixed(1)}) &nbsp;${tag('center')}</td></tr>
-        <tr><td>Die size</td><td>${dieW} × ${dieH} mm &nbsp;${tag('die')}</td></tr>
+        <tr><td>Units</td><td>${unitsBadge}</td></tr>
+        <tr><td>Diameter</td><td>${wafer.diameter.toFixed(units === 'mm' ? 0 : 1)} ${units === 'mm' ? 'mm' : 'u'} &nbsp;${tag('diameter')}</td></tr>
+        <tr><td>Die size</td><td>${typeof dieW === 'number' ? dieW.toFixed(2) : dieW} × ${typeof dieH === 'number' ? dieH.toFixed(2) : dieH} ${units === 'mm' ? 'mm' : 'u'} &nbsp;${tag('die')}</td></tr>
         <tr><td>Total dies</td><td>${total}</td></tr>
         <tr><td>Dies with data</td><td>${withData} / ${total}</td></tr>
       </table>
@@ -69,8 +69,7 @@ function renderPanel(chartId, bodyId, result, provided) {
       <div class="section-label">Inference confidence</div>
       ${!provided.has('diameter') ? confBar(inference.wafer.confidence,
           `wafer · ${inference.wafer.method}`) : '<span style="font-size:11px;color:#888">diameter provided — skipped</span>'}
-      ${!provided.has('die') ? confBar(inference.diePitch.confidence, 'die pitch') : ''}
-      ${!provided.has('die') ? confBar(inference.grid.confidence, 'grid alignment') : ''}
+      ${!provided.has('die') ? confBar(inference.diePitch.confidence, `die pitch · ${inference.diePitch.units}`) : ''}
       ${provided.has('diameter') && provided.has('die') ? '<span style="font-size:11px;color:#2a8c4a">All geometry provided — no inference needed</span>' : ''}
     </div>
   `;
@@ -83,9 +82,7 @@ function confColor(c) {
 }
 
 function buildInputCode(provided, dieW, dieH, diameter) {
-  if (provided.size === 0) {
-    return 'buildWaferMap(data)';
-  }
+  if (provided.size === 0) return 'buildWaferMap(data)';
   const parts = ['data'];
   if (provided.has('die'))      parts.push(`die: { width: ${dieW}, height: ${dieH} }`);
   if (provided.has('diameter')) parts.push(`wafer: { diameter: ${diameter} }`);
@@ -97,29 +94,29 @@ function buildInputCode(provided, dieW, dieH, diameter) {
 async function main() {
   const rows = await loadCsv('../../data/inference-demo.csv');
 
-  // Convert CSV rows to WaferMapPoint array
-  const data = rows.map(r => ({ x: r.x, y: r.y, value: r.value }));
+  // x,y are prober step positions (integers), value is the test result.
+  const data = rows.map(r => ({ x: Number(r.x), y: Number(r.y), value: Number(r.value) }));
 
   document.getElementById('data-summary').textContent =
-    `${data.length} points · columns: x (mm), y (mm), value · no geometry context`;
+    `${data.length} points · columns: x (grid), y (grid), value · no geometry context`;
 
-  // ── Level 1: data array only — infer everything ──────────────────────────────
+  // Level 1: grid positions only — all geometry inferred, normalised units.
   const r1 = buildWaferMap(data);
   renderPanel('chart-1', 'body-1', r1, new Set());
 
-  // ── Level 2: die size provided, wafer inferred ───────────────────────────────
+  // Level 2: die size provided — mm coordinates, infer wafer diameter.
   const r2 = buildWaferMap({ data, die: { width: 10, height: 10 } });
   renderPanel('chart-2', 'body-2', r2, new Set(['die']));
 
-  // ── Level 3: wafer diameter provided, die inferred ───────────────────────────
+  // Level 3: wafer diameter provided — mm coordinates, infer die size.
   const r3 = buildWaferMap({ data, wafer: { diameter: 300 } });
   renderPanel('chart-3', 'body-3', r3, new Set(['diameter']));
 
-  // ── Level 4: fully specified — no inference needed ───────────────────────────
+  // Level 4: fully specified — no inference needed.
   const r4 = buildWaferMap({
     data,
     wafer: { diameter: 300 },
-    die: { width: 10, height: 10 },
+    die:   { width: 10, height: 10 },
   });
   renderPanel('chart-4', 'body-4', r4, new Set(['diameter', 'die']));
 }

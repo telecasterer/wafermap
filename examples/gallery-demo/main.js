@@ -5,7 +5,6 @@ import {
   toPlotly,
 } from 'wafermap';
 
-// Data file uses die-index x/y; multiply by pitch to get mm coordinates.
 const PITCH = 10;
 const WAFER_IDS = ['W01', 'W02', 'W03', 'W04'];
 
@@ -26,10 +25,10 @@ async function main() {
     const waferRows = rows.filter((row) => row.wafer === waferId);
     const firstRow = waferRows[0] ?? {};
 
-    // Convert die-index x/y to mm coordinates for buildWaferMap.
+    // x,y in the CSV are prober step positions (die grid indices).
     const data = waferRows.map((row) => ({
-      x: Number(row.x) * PITCH,
-      y: Number(row.y) * PITCH,
+      x: Number(row.x),
+      y: Number(row.y),
       bin: Number(row.hbin),
       value: Number(row.testA),
     }));

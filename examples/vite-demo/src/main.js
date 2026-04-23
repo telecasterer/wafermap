@@ -1,9 +1,7 @@
 import Plotly from 'plotly.js-dist-min';
 import {
-  createWafer,
-  generateDies,
-  clipDiesToWafer,
-  applyOrientation,
+  buildWaferMap,
+  listColorSchemes,
   buildScene,
   toPlotly,
 } from 'wafermap';
@@ -68,6 +66,52 @@ document.querySelector('#app').innerHTML = `
   </main>
 `;
 
+// ── Synthetic wafer data ──────────────────────────────────────────────────────
+// Generate test data as die grid positions (prober step coordinates).
+// x,y are integers; die size and wafer diameter are passed to buildWaferMap.
+
+const rawData = [];
+for (let y = -15; y <= 15; y++) {
+  for (let x = -15; x <= 15; x++) {
+    if (Math.sqrt(x * x + y * y) > 15) continue;
+    const r     = Math.sqrt(x * x + y * y);
+    const value = Math.max(0.05, 0.97 - r * 0.055 + Math.sin(x * 0.8 + y * 0.5) * 0.03);
+    rawData.push({ x, y, value });
+  }
+}
+
+const baseResult = buildWaferMap({
+  data: rawData,
+  wafer: {
+    diameter: 300,
+    flat: { type: 'bottom', length: 40 },
+    metadata: waferMeta,
+  },
+  die: { width: 10, height: 10 },
+});
+
+// Post-enrich with multiple values and bins so stacked modes work.
+function toBin(v) { return v >= 0.75 ? 1 : v >= 0.5 ? 2 : 3; }
+
+const rawMap = new Map(rawData.map(d => [`${d.x},${d.y}`, d]));
+const enrichedDies = baseResult.dies.map(die => {
+  const src = rawMap.get(`${die.i},${die.j}`);
+  if (!src) return die;
+  const v = src.value;
+  return {
+    ...die,
+    values: [v, Math.max(0.05, v - 0.08), Math.max(0.05, v - 0.14)],
+    bins:   [toBin(v), toBin(v - 0.08), toBin(v - 0.14)],
+    metadata: {
+      lotId:  waferMeta.lot,
+      waferId: `${waferMeta.lot}-W${String(waferMeta.waferNumber).padStart(2, '0')}`,
+      deviceType: 'ViteDemoDevice',
+    },
+  };
+});
+
+// ── Render state ──────────────────────────────────────────────────────────────
+
 const state = {
   plotMode: 'value',
   showText: false,
@@ -75,41 +119,8 @@ const state = {
   showQuadrantBoundaries: false,
 };
 
-const wafer = createWafer({
-  diameter: 300,
-  flat: { type: 'bottom', length: 40 },
-  metadata: waferMeta,
-});
-
-const dies = applyOrientation(enrichDies(
-  clipDiesToWafer(generateDies(wafer, { width: 10, height: 10 }), wafer, { width: 10, height: 10 })
-), wafer);
-
-function enrichDies(input) {
-  return input.map((die) => {
-    const radial = Math.sqrt(die.i ** 2 + die.j ** 2);
-    const value = Math.max(0.05, 0.97 - radial * 0.055 + Math.sin(die.i * 0.8 + die.j * 0.5) * 0.03);
-    return {
-      ...die,
-      values: [value, Math.max(0.05, value - 0.08), Math.max(0.05, value - 0.14)],
-      bins: [toBin(value), toBin(value - 0.08), toBin(value - 0.14)],
-      metadata: {
-        lotId: waferMeta.lot,
-        waferId: `${waferMeta.lot}-W${String(waferMeta.waferNumber).padStart(2, '0')}`,
-        deviceType: 'ViteDemoDevice',
-      },
-    };
-  });
-}
-
-function toBin(value) {
-  if (value >= 0.75) return 1;
-  if (value >= 0.5) return 2;
-  return 3;
-}
-
 function render() {
-  const scene = buildScene(wafer, dies, [], {
+  const scene = buildScene(baseResult.wafer, enrichedDies, [], {
     plotMode: state.plotMode,
     showText: state.showText,
     showRingBoundaries: state.showRingBoundaries,
@@ -124,36 +135,30 @@ function render() {
     margin: { t: 48, l: 12, r: 24, b: 12 },
   }, { responsive: true });
 
-  document.querySelector('#meta').innerHTML = Object.entries(waferMeta).map(([key, value]) => `
+  document.querySelector('#meta').innerHTML = Object.entries(waferMeta).map(([key, val]) => `
     <div class="meta-row">
       <span>${formatKey(key)}</span>
-      <strong>${value}</strong>
+      <strong>${val}</strong>
     </div>
   `).join('');
 }
 
 function formatKey(key) {
-  return key.replace(/([A-Z])/g, ' $1').replace(/^./, (char) => char.toUpperCase());
+  return key.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase());
 }
 
-document.querySelector('#mode').addEventListener('change', (event) => {
-  state.plotMode = event.target.value;
-  render();
-});
+// ── Populate colour scheme selector ──────────────────────────────────────────
+const colorSel = document.querySelector('#color-scheme');
+if (colorSel) {
+  colorSel.innerHTML = listColorSchemes()
+    .filter(({ name }) => name !== 'color')
+    .map(({ name, label }) => `<option value="${name}">${label}</option>`)
+    .join('');
+}
 
-document.querySelector('#labels').addEventListener('change', (event) => {
-  state.showText = event.target.checked;
-  render();
-});
-
-document.querySelector('#rings').addEventListener('change', (event) => {
-  state.showRingBoundaries = event.target.checked;
-  render();
-});
-
-document.querySelector('#quadrants').addEventListener('change', (event) => {
-  state.showQuadrantBoundaries = event.target.checked;
-  render();
-});
+document.querySelector('#mode').addEventListener('change', e => { state.plotMode = e.target.value; render(); });
+document.querySelector('#labels').addEventListener('change', e => { state.showText = e.target.checked; render(); });
+document.querySelector('#rings').addEventListener('change', e => { state.showRingBoundaries = e.target.checked; render(); });
+document.querySelector('#quadrants').addEventListener('change', e => { state.showQuadrantBoundaries = e.target.checked; render(); });
 
 render();

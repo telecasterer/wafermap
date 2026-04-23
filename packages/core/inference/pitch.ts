@@ -1,54 +1,85 @@
-export interface PitchInference {
+export interface PitchResult {
   pitchX: number;
   pitchY: number;
+  /** 'mm' when at least one physical dimension is known; 'normalised' when
+   *  dimensions are estimated solely from the circular grid constraint. */
+  units: 'mm' | 'normalised';
   confidence: number;
 }
 
 /**
- * Infer die pitch (grid spacing) from a set of XY positions.
- * Finds the fundamental spacing in each axis by analysing the minimum
- * recurring difference between sorted unique coordinate values.
+ * Resolve die pitch from prober-step grid positions and optional geometry.
+ *
+ * Input x,y are integer prober step coordinates (die grid positions), not mm.
+ * Physical mm position = grid_pos × pitch.
+ *
+ * When neither die dimensions nor wafer diameter are known, the wafer's
+ * circular shape constrains the aspect ratio:
+ *   (x_range × pitchX) ≈ (y_range × pitchY)   [both span the full diameter]
+ * Setting pitchX = 1 (normalised unit) gives pitchY = x_range / y_range.
  */
-export function inferDiePitch(points: Array<{ x: number; y: number }>): PitchInference {
-  if (points.length < 2) {
-    return { pitchX: 10, pitchY: 10, confidence: 0 };
+export function resolveGridPitch(
+  gridPoints: Array<{ x: number; y: number }>,
+  dieOpts?: { width?: number; height?: number },
+  waferDiameter?: number,
+): PitchResult {
+  const hasWidth  = dieOpts?.width  !== undefined;
+  const hasHeight = dieOpts?.height !== undefined;
+
+  // Case 1: Both dimensions provided — fully specified in mm.
+  if (hasWidth && hasHeight) {
+    return {
+      pitchX: dieOpts!.width!,
+      pitchY: dieOpts!.height!,
+      units: 'mm',
+      confidence: 1.0,
+    };
   }
 
-  const xResult = findPitch(points.map(p => p.x));
-  const yResult = findPitch(points.map(p => p.y));
+  if (gridPoints.length === 0) {
+    const fallback = hasWidth ? dieOpts!.width! : hasHeight ? dieOpts!.height! : 10;
+    return {
+      pitchX: fallback,
+      pitchY: fallback,
+      units: hasWidth || hasHeight || waferDiameter !== undefined ? 'mm' : 'normalised',
+      confidence: 0,
+    };
+  }
 
+  const xs = gridPoints.map(p => p.x);
+  const ys = gridPoints.map(p => p.y);
+  const xRange = Math.max(...xs) - Math.min(...xs) + 1;
+  const yRange = Math.max(...ys) - Math.min(...ys) + 1;
+
+  // Case 2: Width only — derive height from circular aspect ratio.
+  if (hasWidth) {
+    const pitchX = dieOpts!.width!;
+    return { pitchX, pitchY: pitchX * xRange / yRange, units: 'mm', confidence: 0.8 };
+  }
+
+  // Case 3: Height only — derive width from circular aspect ratio.
+  if (hasHeight) {
+    const pitchY = dieOpts!.height!;
+    return { pitchX: pitchY * yRange / xRange, pitchY, units: 'mm', confidence: 0.8 };
+  }
+
+  // Case 4: Wafer diameter provided but no die size.
+  // Each axis independently spans approximately the full diameter in steps.
+  if (waferDiameter !== undefined) {
+    return {
+      pitchX: waferDiameter / xRange,
+      pitchY: waferDiameter / yRange,
+      units: 'mm',
+      confidence: 0.6,
+    };
+  }
+
+  // Case 5: Nothing provided — normalised units, aspect ratio from circular constraint.
+  // pitchX = 1 unit; pitchY = xRange / yRange keeps physical extents equal.
   return {
-    pitchX: xResult.pitch,
-    pitchY: yResult.pitch,
-    confidence: (xResult.confidence + yResult.confidence) / 2,
+    pitchX: 1,
+    pitchY: xRange / yRange,
+    units: 'normalised',
+    confidence: 0.4,
   };
-}
-
-function findPitch(coords: number[]): { pitch: number; confidence: number } {
-  // Deduplicate with rounding to suppress floating-point noise
-  const unique = [...new Set(coords.map(v => Math.round(v * 100) / 100))].sort((a, b) => a - b);
-
-  if (unique.length < 2) return { pitch: 10, confidence: 0 };
-
-  const diffs: number[] = [];
-  for (let i = 1; i < unique.length; i++) {
-    const d = unique[i] - unique[i - 1];
-    if (d > 1e-6) diffs.push(d);
-  }
-
-  if (diffs.length === 0) return { pitch: 10, confidence: 0 };
-
-  // The fundamental pitch is the smallest positive difference between adjacent
-  // unique values. Larger gaps are multiples of this base pitch.
-  const minDiff = Math.min(...diffs);
-
-  // Validate: fraction of diffs that are near-integer multiples of minDiff.
-  const tol = 0.05;
-  let matches = 0;
-  for (const d of diffs) {
-    const ratio = d / minDiff;
-    if (Math.abs(ratio - Math.round(ratio)) / Math.max(ratio, 1) < tol) matches++;
-  }
-
-  return { pitch: minDiff, confidence: matches / diffs.length };
 }

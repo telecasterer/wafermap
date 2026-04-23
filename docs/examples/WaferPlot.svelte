@@ -2,69 +2,51 @@
   import { browser } from '$app/environment';
   import { onMount } from 'svelte';
   import {
-    createWafer,
-    generateDies,
-    clipDiesToWafer,
-    applyOrientation,
+    buildWaferMap,
     buildScene,
     toPlotly,
-    type Die
+    type WaferMapPoint,
   } from 'wafermap';
 
-  export let rows: Array<{ i: number; j: number; value?: number; bin?: number }> = [];
+  /**
+   * Array of data points.  x and y are **die grid positions** (prober step
+   * coordinates — integers like −7, 0, 5), not millimetre values.
+   */
+  export let rows: WaferMapPoint[] = [];
+  /** Die width and height in mm.  Passed to buildWaferMap for physical scaling. */
+  export let die: { width: number; height: number } = { width: 10, height: 10 };
+  /** Wafer diameter in mm.  Inferred from grid extent when omitted. */
+  export let diameter: number | undefined = undefined;
   export let plotMode: 'value' | 'hardbin' | 'softbin' | 'stacked_values' | 'stacked_bins' = 'value';
   export let showText = false;
 
   let chartEl: HTMLDivElement;
   let Plotly: typeof import('plotly.js-dist-min') | null = null;
 
-  function enrichDies(dies: Die[]) {
-    const rowMap = new Map(rows.map((row) => [`${row.i},${row.j}`, row]));
-
-    return dies.map((die) => {
-      const row = rowMap.get(`${die.i},${die.j}`);
-      const value = row?.value ?? Math.max(0.05, 0.95 - (Math.abs(die.i) + Math.abs(die.j)) * 0.05);
-      const bin = row?.bin ?? (value >= 0.75 ? 1 : value >= 0.5 ? 2 : 3);
-
-      return {
-        ...die,
-        values: [value],
-        bins: [bin]
-      };
-    });
-  }
-
   async function render() {
     if (!browser || !chartEl || !Plotly) return;
 
-    const wafer = createWafer({
-      diameter: 300,
-      flat: { type: 'bottom', length: 40 },
-      orientation: 0,
-      metadata: {
-        lot: 'LOT-SVELTE',
-        waferNumber: 1,
-        testDate: '2026-04-21',
-        testProgram: 'SK-DEMO',
-        temperature: 25
-      }
+    // buildWaferMap handles geometry — pass grid positions and let it compute
+    // die layout, clipping, and wafer diameter.
+    const result = buildWaferMap({
+      data: rows,
+      wafer: {
+        diameter,
+        flat: { type: 'bottom', length: 40 },
+        orientation: 0,
+        metadata: {
+          lot: 'LOT-SVELTE',
+          waferNumber: 1,
+          testDate: '2026-04-21',
+          testProgram: 'SK-DEMO',
+          temperature: 25,
+        },
+      },
+      die,
     });
 
-    const dies = enrichDies(
-      clipDiesToWafer(
-        generateDies(wafer, { width: 10, height: 10 }),
-        wafer,
-        { width: 10, height: 10 }
-      )
-    );
-
-    const oriented = applyOrientation(dies, wafer);
-    const scene = buildScene(wafer, oriented, [], {
-      plotMode,
-      showText
-    });
-    const plot = toPlotly(scene);
-
+    const scene = buildScene(result.wafer, result.dies, [], { plotMode, showText });
+    const plot  = toPlotly(scene);
     await Plotly.react(chartEl, plot.data, plot.layout, { responsive: true });
   }
 
