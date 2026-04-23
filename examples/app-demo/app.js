@@ -408,7 +408,7 @@ function populateConfigForm() {
     </label>
   `).join('');
 
-  document.getElementById('config-section').hidden = false;
+  // sidebar-config visibility is managed by handleFile
 }
 
 function readConfig() {
@@ -461,26 +461,52 @@ function populateMapControls() {
 // ── Event wiring ──────────────────────────────────────────────────────────────
 
 function wireEvents() {
-  const dropZone  = document.getElementById('drop-zone');
-  const fileInput = document.getElementById('file-input');
+  const fileInput  = document.getElementById('file-input');
+  const filePill   = document.getElementById('file-pill');
+  const dropBanner = document.getElementById('drop-banner');
+  const content    = document.getElementById('content');
 
-  dropZone.addEventListener('click',    () => fileInput.click());
-  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-  dropZone.addEventListener('drop', e => {
-    e.preventDefault();
-    dropZone.classList.remove('drag-over');
-    handleFile(e.dataTransfer.files[0]);
-  });
+  // File pill click / drag
+  filePill.addEventListener('click', () => fileInput.click());
+
+  for (const target of [filePill, dropBanner]) {
+    target.addEventListener('dragover', e => { e.preventDefault(); filePill.classList.add('drag-over'); dropBanner.classList.add('drag-over'); });
+    target.addEventListener('dragleave', () => { filePill.classList.remove('drag-over'); dropBanner.classList.remove('drag-over'); });
+    target.addEventListener('drop', e => {
+      e.preventDefault();
+      filePill.classList.remove('drag-over');
+      dropBanner.classList.remove('drag-over');
+      handleFile(e.dataTransfer.files[0]);
+    });
+  }
+
   fileInput.addEventListener('change', () => handleFile(fileInput.files[0]));
+
+  document.getElementById('btn-reopen').addEventListener('click', () => fileInput.click());
 
   document.getElementById('btn-process').addEventListener('click', () => {
     readConfig();
     processData();
     populatePassBinSelector();
     populateMapControls();
+
+    // Switch sidebar to controls view
+    document.getElementById('sidebar-config').hidden   = true;
+    document.getElementById('sidebar-controls').hidden = false;
+
+    // Hide drop banner, show results
+    dropBanner.hidden = true;
     document.getElementById('analytics-section').hidden = false;
     document.getElementById('map-section').hidden       = false;
+
+    // Header meta
+    const allDies = Object.values(state.data.diesByWafer);
+    const bins    = getUniqueBins(Object.values(state.data.diesByWafer).flat());
+    document.getElementById('hm-wafers').textContent = state.data.waferIds.length;
+    document.getElementById('hm-dies').textContent   = allDies[0]?.length ?? '—';
+    document.getElementById('hm-bins').textContent   = bins.length;
+    document.getElementById('header-meta').hidden    = false;
+
     renderPareto();
     renderYieldChart();
     refreshGallery();
@@ -494,11 +520,15 @@ function wireEvents() {
 
   document.getElementById('btn-view-maps').addEventListener('click', () => {
     state.ui.view = 'maps';
+    document.getElementById('btn-view-maps').classList.add('active');
+    document.getElementById('btn-view-bingallery').classList.remove('active');
     document.getElementById('wafer-selection-bar').hidden = false;
     refreshGallery();
   });
   document.getElementById('btn-view-bingallery').addEventListener('click', () => {
     state.ui.view = 'bingallery';
+    document.getElementById('btn-view-bingallery').classList.add('active');
+    document.getElementById('btn-view-maps').classList.remove('active');
     document.getElementById('wafer-selection-bar').hidden = true;
     refreshGallery();
   });
@@ -540,9 +570,8 @@ function wireEvents() {
     ['btn-quadrants', 'showQuadrants'],
     ['btn-xy',        'showXY'],
   ]) {
-    document.getElementById(id).addEventListener('click', () => {
-      state.ui[key] = !state.ui[key];
-      document.getElementById(id).classList.toggle('active', state.ui[key]);
+    document.getElementById(id).addEventListener('change', e => {
+      state.ui[key] = e.target.checked;
       refreshGallery();
     });
   }
@@ -550,16 +579,29 @@ function wireEvents() {
 
 function handleFile(file) {
   if (!file) return;
-  document.getElementById('file-name').textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+  const pill = document.getElementById('file-pill');
+  document.getElementById('file-pill-name').textContent = `${file.name}  (${(file.size / 1024).toFixed(0)} KB)`;
+  pill.classList.add('has-file');
+
   const reader = new FileReader();
   reader.onload = e => {
     const { headers, rows } = parseCsv(e.target.result);
     state.headers = headers;
     state.rows    = rows;
+    state.data    = { waferIds: [], wafer: null, diesByWafer: {} };
+
     const detected = autoDetect(headers, rows);
     Object.assign(state.cfg, detected);
+
+    // Reset to config view
+    document.getElementById('sidebar-empty').hidden    = true;
+    document.getElementById('sidebar-config').hidden   = false;
+    document.getElementById('sidebar-controls').hidden = true;
     document.getElementById('analytics-section').hidden = true;
     document.getElementById('map-section').hidden       = true;
+    document.getElementById('header-meta').hidden       = true;
+    document.getElementById('drop-banner').hidden       = false;
+
     populateConfigForm();
   };
   reader.readAsText(file);

@@ -172,10 +172,17 @@ function redraw() {
 function renderBinLegend() {
   const scheme = getColorScheme(appState.colorScheme);
   const dies = appState.currentDies;
-  const bins = [...new Set(dies.map((d) => d.bins?.[0]).filter((b) => b !== undefined))].sort((a, b) => a - b);
+  const binCounts = {};
+  for (const d of dies.filter(d => !d.partial)) {
+    const b = d.bins?.[0];
+    if (b !== undefined) binCounts[b] = (binCounts[b] ?? 0) + 1;
+  }
+  const bins = Object.keys(binCounts).map(Number).sort((a, b) => a - b);
   document.getElementById('bin-legend').innerHTML = bins.map((bin) =>
-    `<div class="bin-swatch">
-      <div class="bin-dot" style="background:${scheme.forBin(bin)}"></div> B${bin}
+    `<div class="bin-row">
+      <div class="bin-dot" style="background:${scheme.forBin(bin)}"></div>
+      <span class="bin-name">Bin ${bin}</span>
+      <span class="bin-count">${binCounts[bin]}</span>
     </div>`
   ).join('');
 }
@@ -189,24 +196,25 @@ function updateUI() {
   const fullDies = dies.filter((die) => !die.partial);
   const pass = fullDies.filter((die) => die.bins?.[0] === 1).length;
   const total = fullDies.length;
+  const pct = total ? (100 * pass / total).toFixed(1) : '0.0';
 
-  document.getElementById('stat-dies').textContent = total;
-  document.getElementById('stat-pass').textContent = `${pass} (${total ? (100 * pass / total).toFixed(1) : 0}%)`;
+  document.getElementById('stat-dies').textContent    = total;
+  document.getElementById('stat-pass').textContent    = `${pct}%`;
   document.getElementById('stat-partial').textContent = dies.filter((die) => die.partial).length;
 
   const spatial = summarizeSpatialStats(dies, appState.wafer, appState.ringCount);
-  renderStatsTable('ring-stats', spatial.ringStats);
-  renderStatsTable('quadrant-stats', spatial.quadrantStats);
+  renderSpatialTable('ring-stats', spatial.ringStats);
+  renderSpatialTable('quadrant-stats', spatial.quadrantStats);
   renderBinLegend();
 }
 
 function updateMetaPanel(meta) {
   if (!meta) return;
-  document.getElementById('meta-lot').textContent = meta.lot;
-  document.getElementById('meta-wafer').textContent = meta.waferNumber;
-  document.getElementById('meta-date').textContent = meta.testDate;
+  document.getElementById('meta-lot').textContent     = meta.lot;
+  document.getElementById('meta-wafer').textContent   = meta.waferNumber;
+  document.getElementById('meta-date').textContent    = meta.testDate;
   document.getElementById('meta-program').textContent = meta.testProgram;
-  document.getElementById('meta-temp').textContent = `${meta.temperature}°C`;
+  document.getElementById('meta-temp').textContent    = `${meta.temperature}°C`;
 }
 
 function summarizeSpatialStats(dies, wafer, ringCount) {
@@ -234,11 +242,19 @@ function summarizeSpatialStats(dies, wafer, ringCount) {
   return { ringStats, quadrantStats };
 }
 
-function renderStatsTable(targetId, rows) {
+function renderSpatialTable(targetId, rows) {
   const target = document.getElementById(targetId);
   target.innerHTML = rows.map((row) => {
-    const percent = row.total ? (100 * row.pass / row.total).toFixed(1) : '0.0';
-    return `<tr><td>${row.label}</td><td>${row.total} / ${row.pass} (${percent}%)</td></tr>`;
+    const pct = row.total ? (100 * row.pass / row.total) : 0;
+    return `<tr>
+      <td>${row.label}</td>
+      <td>
+        <div class="pct-bar-wrap">
+          <div class="pct-bar"><div class="pct-bar-fill" style="width:${pct.toFixed(1)}%"></div></div>
+          <span class="pct-num">${pct.toFixed(0)}%</span>
+        </div>
+      </td>
+    </tr>`;
   }).join('');
 }
 

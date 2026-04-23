@@ -3,93 +3,175 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>wmap — Advanced Manual Pipeline Demo</title>
+  <title>wafermap — demo</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-  <script type="importmap">
-    {
-      "imports": {
-        "wafermap": "../../dist/index.js"
-      }
-    }
-  </script>
+  <script type="importmap">{ "imports": { "wafermap": "../../dist/index.js" } }</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    body {
-      font-family: system-ui, sans-serif;
-      font-size: 13px;
-      background: #e8e8e8;
-      color: #333;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 10px;
-      padding: 16px;
+    :root {
+      --bg:         #f0f2f5;
+      --surface:    #ffffff;
+      --border:     #e2e5ea;
+      --accent:     #2563eb;
+      --accent-dim: #dbeafe;
+      --text:       #1a1d23;
+      --muted:      #6b7280;
+      --radius:     10px;
+      --panel-w:    192px;
+      --header-h:   52px;
+      --toolbar-h:  48px;
+      --shadow-sm:  0 1px 3px rgba(0,0,0,.08);
     }
 
-    h1 { font-size: 1rem; font-weight: 600; color: #444; letter-spacing: .02em; }
+    html, body { height: 100%; overflow: hidden; }
 
-    /* ── Toolbar ──────────────────────────────────────────── */
-    #toolbar {
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      background: var(--bg);
+      color: var(--text);
       display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
+      flex-direction: column;
+    }
+
+    /* ── Header ─────────────────────────────────────────── */
+    #header {
+      height: var(--header-h);
+      background: #0f1623;
+      color: #e2e8f0;
+      display: flex;
       align-items: center;
-      background: #fff;
-      padding: 8px 14px;
-      border-radius: 8px;
-      box-shadow: 0 1px 4px rgba(0,0,0,.1);
-      width: min(900px, 96vw);
+      gap: 16px;
+      padding: 0 18px;
+      flex-shrink: 0;
+    }
+
+    .wordmark {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -.01em;
+      color: #f1f5f9;
+    }
+    .wordmark span { color: #60a5fa; }
+
+    .header-divider {
+      width: 1px; height: 20px;
+      background: #2d3748;
+    }
+
+    .header-tag {
+      font-size: 11px;
+      color: #64748b;
+    }
+
+    .header-tag strong {
+      font-weight: 500;
+      color: #94a3b8;
+    }
+
+    #wafer-selector {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .wafer-label {
+      font-size: 11px;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+
+    #sel-wafer {
+      padding: 5px 8px;
+      border-radius: 6px;
+      border: 1px solid #2d3748;
+      background: #1e293b;
+      color: #e2e8f0;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    #sel-wafer:focus { outline: none; border-color: var(--accent); }
+
+    #header .spacer { flex: 1; }
+
+    .header-badge {
+      font-size: 11px;
+      color: #475569;
+      padding: 3px 8px;
+      border: 1px solid #1e293b;
+      border-radius: 5px;
+    }
+
+    /* ── Toolbar ─────────────────────────────────────────── */
+    #toolbar {
+      height: var(--toolbar-h);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 0;
+      padding: 0 14px;
+      flex-shrink: 0;
+      box-shadow: var(--shadow-sm);
+      overflow-x: auto;
     }
 
     .ctrl-group {
       display: flex;
       align-items: center;
       gap: 5px;
+      padding: 0 12px;
+      border-right: 1px solid var(--border);
+      height: 100%;
     }
 
-    .ctrl-group + .ctrl-group {
-      padding-left: 10px;
-      border-left: 1px solid #ddd;
-    }
+    .ctrl-group:first-child { padding-left: 0; }
+    .ctrl-group:last-child  { border-right: none; }
 
     .ctrl-label {
-      font-size: 11px;
-      font-weight: 600;
+      font-size: 10px;
+      font-weight: 700;
       text-transform: uppercase;
-      color: #888;
-      margin-right: 2px;
+      letter-spacing: .05em;
+      color: var(--muted);
+      white-space: nowrap;
     }
 
     select {
-      padding: 4px 6px;
-      border: 1px solid #ccc;
-      border-radius: 5px;
+      padding: 4px 7px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
       font-size: 12px;
-      background: #fafafa;
+      background: #fafbfc;
+      color: var(--text);
       cursor: pointer;
     }
-    select:focus { outline: none; border-color: #5b9cf6; }
+    select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
 
     button {
-      padding: 4px 10px;
-      border: 1px solid #ccc;
-      border-radius: 5px;
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
       font-size: 12px;
-      background: #fafafa;
+      font-weight: 500;
+      background: #fafbfc;
+      color: var(--text);
       cursor: pointer;
-      transition: background .12s;
+      transition: background .1s, border-color .1s;
+      white-space: nowrap;
     }
-    button:hover  { background: #eee; }
-    button.active { background: #d0e4ff; border-color: #5b9cf6; color: #1a5fcc; font-weight: 600; }
+    button:hover  { background: #f0f1f3; }
+    button.active { background: var(--accent-dim); border-color: #93c5fd; color: var(--accent); font-weight: 600; }
+    button.icon   { padding: 5px 8px; font-size: 14px; }
 
     #rot-badge {
-      display: inline-block;
-      min-width: 32px;
-      text-align: center;
       font-size: 11px;
       font-weight: 600;
-      color: #555;
+      color: var(--muted);
+      min-width: 30px;
+      text-align: center;
     }
 
     label.toggle {
@@ -97,61 +179,63 @@
       align-items: center;
       gap: 5px;
       cursor: pointer;
+      font-size: 12px;
+      color: var(--text);
+      white-space: nowrap;
       user-select: none;
     }
-    label.toggle input[type=checkbox] { accent-color: #1a6eff; width: 14px; height: 14px; }
+    label.toggle input[type=checkbox] { accent-color: var(--accent); width: 14px; height: 14px; }
 
-    /* ── Main layout ──────────────────────────────────────── */
+    /* ── Main layout ─────────────────────────────────────── */
     #main {
+      flex: 1;
       display: flex;
-      gap: 10px;
-      align-items: flex-start;
-      width: min(900px, 96vw);
+      overflow: hidden;
+    }
+
+    /* ── Chart ───────────────────────────────────────────── */
+    #chart-wrap {
+      flex: 1;
+      padding: 14px;
+      min-width: 0;
     }
 
     #chart {
-      flex: 1 1 auto;
-      min-width: 0;
-      aspect-ratio: 1;
-      background: #fff;
-      border-radius: 10px;
-      box-shadow: 0 2px 10px rgba(0,0,0,.12);
+      width: 100%;
+      height: 100%;
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
     }
 
-    /* ── Side panel ───────────────────────────────────────── */
+    /* ── Side panel ──────────────────────────────────────── */
     #side {
-      flex: 0 0 170px;
+      width: var(--panel-w);
+      flex-shrink: 0;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      overflow-y: auto;
+      padding: 12px 10px;
+      gap: 12px;
     }
 
-    .panel {
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 1px 4px rgba(0,0,0,.1);
-      padding: 10px 12px;
-    }
+    .panel-section { display: flex; flex-direction: column; gap: 6px; }
 
-    .panel h3 {
-      font-size: 11px;
+    .panel-heading {
+      font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
-      color: #888;
-      margin-bottom: 7px;
-      letter-spacing: .04em;
+      letter-spacing: .06em;
+      color: var(--muted);
     }
 
-    .kv-table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    .kv-table td { padding: 2px 0; vertical-align: top; }
-    .kv-table td:first-child { font-weight: 600; color: #666; width: 52%; padding-right: 4px; }
-    .kv-table td:last-child  { color: #222; }
-
-    .stat-value { font-size: 1.3em; font-weight: 700; color: #2c7be5; }
-    .stat-label { font-size: 11px; color: #888; }
+    .kv-table { width: 100%; border-collapse: collapse; }
+    .kv-table td { padding: 2px 0; vertical-align: top; font-size: 12px; }
+    .kv-table td:first-child { color: var(--muted); width: 48%; padding-right: 4px; }
+    .kv-table td:last-child  { color: var(--text); font-weight: 500; }
 
     .stats-grid {
       display: grid;
@@ -159,32 +243,101 @@
       gap: 6px;
     }
 
-    .stat-cell { text-align: center; }
+    .stat-cell {
+      background: var(--bg);
+      border-radius: 7px;
+      padding: 7px 6px;
+      text-align: center;
+    }
 
-    /* ── Bin legend ───────────────────────────────────────── */
-    .bin-legend { display: flex; flex-wrap: wrap; gap: 5px; }
-    .bin-swatch {
+    .stat-val {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1.1;
+    }
+
+    .stat-lbl {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .stat-cell.full { grid-column: 1 / -1; }
+
+    .sep { height: 1px; background: var(--border); margin: 0 -10px; }
+
+    .spatial-table { width: 100%; border-collapse: collapse; }
+    .spatial-table td {
+      padding: 3px 0;
+      font-size: 11px;
+      vertical-align: middle;
+    }
+    .spatial-table td:first-child { color: var(--muted); width: 46%; }
+    .spatial-table td:last-child  { font-weight: 500; }
+
+    .pct-bar-wrap {
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 5px;
+    }
+
+    .pct-bar {
+      flex: 1;
+      height: 4px;
+      background: #e5e7eb;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .pct-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      transition: width .3s;
+    }
+
+    .pct-num { font-size: 10px; color: var(--muted); width: 32px; text-align: right; }
+
+    /* Bin legend */
+    .bin-legend { display: flex; flex-direction: column; gap: 4px; }
+
+    .bin-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
       font-size: 11px;
     }
+
     .bin-dot {
       width: 10px; height: 10px;
-      border-radius: 2px;
+      border-radius: 3px;
       flex-shrink: 0;
     }
+
+    .bin-name { flex: 1; color: var(--text); }
+    .bin-count { color: var(--muted); }
   </style>
 </head>
 <body>
 
-<h1>wafermap — Advanced Demo <span style="font-size:0.7em;font-weight:400;color:#888;margin-left:8px;">manual pipeline · for full control</span></h1>
+<!-- ── Header ──────────────────────────────────────────────────────────── -->
+<div id="header">
+  <div class="wordmark">wafer<span>map</span></div>
+  <div class="header-divider"></div>
 
-<div id="toolbar">
-  <div class="ctrl-group">
-    <span class="ctrl-label">Wafer</span>
+  <div id="wafer-selector">
+    <span class="wafer-label">Wafer</span>
     <select id="sel-wafer"></select>
   </div>
+
+  <div class="spacer"></div>
+
+  <div class="header-tag"><strong>Manual pipeline</strong> demo · LOT456</div>
+</div>
+
+<!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
+<div id="toolbar">
 
   <div class="ctrl-group">
     <span class="ctrl-label">Mode</span>
@@ -200,41 +353,9 @@
   <div class="ctrl-group">
     <span class="ctrl-label">Test</span>
     <select id="sel-channel">
-      <option value="0">Test A</option>
-      <option value="1">Test B</option>
-      <option value="2">Test C</option>
-    </select>
-  </div>
-
-  <div class="ctrl-group">
-    <span class="ctrl-label">Rotate</span>
-    <button id="rot-left-btn">↺ −90°</button>
-    <span id="rot-badge">0°</span>
-    <button id="rot-right-btn">↻ +90°</button>
-  </div>
-
-  <div class="ctrl-group">
-    <span class="ctrl-label">Flip</span>
-    <button id="flipx-btn">⇿ H</button>
-    <button id="flipy-btn">↕ V</button>
-  </div>
-
-  <div class="ctrl-group">
-    <label class="toggle"><input type="checkbox" id="chk-text"> Labels</label>
-    <label class="toggle"><input type="checkbox" id="chk-reticle"> Reticle</label>
-    <label class="toggle"><input type="checkbox" id="chk-probe"> Probe path</label>
-    <label class="toggle"><input type="checkbox" id="chk-rings"> Rings</label>
-    <label class="toggle"><input type="checkbox" id="chk-quadrants"> Quadrants</label>
-    <label class="toggle"><input type="checkbox" id="chk-xy"> XY axes</label>
-  </div>
-
-  <div class="ctrl-group">
-    <span class="ctrl-label">Ring Count</span>
-    <select id="sel-rings">
-      <option value="3">3</option>
-      <option value="4" selected>4</option>
-      <option value="5">5</option>
-      <option value="6">6</option>
+      <option value="0">A</option>
+      <option value="1">B</option>
+      <option value="2">C</option>
     </select>
   </div>
 
@@ -251,26 +372,54 @@
       <option value="3">Bin 3</option>
       <option value="4">Bin 4</option>
       <option value="5">Bin 5</option>
-      <option value="6">Bin 6</option>
-      <option value="7">Bin 7</option>
-      <option value="8">Bin 8</option>
-      <option value="9">Bin 9</option>
-      <option value="10">Bin 10</option>
-      <option value="11">Bin 11</option>
-      <option value="12">Bin 12</option>
-      <option value="13">Bin 13</option>
-      <option value="14">Bin 14</option>
     </select>
   </div>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">Rotate</span>
+    <button class="icon" id="rot-left-btn" title="Rotate −90°">↺</button>
+    <span id="rot-badge">0°</span>
+    <button class="icon" id="rot-right-btn" title="Rotate +90°">↻</button>
+  </div>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">Flip</span>
+    <button id="flipx-btn">H</button>
+    <button id="flipy-btn">V</button>
+  </div>
+
+  <div class="ctrl-group">
+    <label class="toggle"><input type="checkbox" id="chk-text"> Labels</label>
+    <label class="toggle"><input type="checkbox" id="chk-reticle"> Reticle</label>
+    <label class="toggle"><input type="checkbox" id="chk-probe"> Probe</label>
+    <label class="toggle"><input type="checkbox" id="chk-rings"> Rings</label>
+    <label class="toggle"><input type="checkbox" id="chk-quadrants"> Quadrants</label>
+    <label class="toggle"><input type="checkbox" id="chk-xy"> XY</label>
+  </div>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">Ring count</span>
+    <select id="sel-rings">
+      <option value="3">3</option>
+      <option value="4" selected>4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+    </select>
+  </div>
+
 </div>
 
+<!-- ── Main ────────────────────────────────────────────────────────────── -->
 <div id="main">
-  <div id="chart"></div>
 
-  <div id="side">
+  <div id="chart-wrap">
+    <div id="chart"></div>
+  </div>
 
-    <div class="panel">
-      <h3>Wafer Info</h3>
+  <aside id="side">
+
+    <div class="panel-section">
+      <div class="panel-heading">Wafer Info</div>
       <table class="kv-table">
         <tr><td>Lot</td>     <td id="meta-lot">—</td></tr>
         <tr><td>Wafer</td>   <td id="meta-wafer">—</td></tr>
@@ -280,40 +429,48 @@
       </table>
     </div>
 
-    <div class="panel">
-      <h3>Statistics</h3>
+    <div class="sep"></div>
+
+    <div class="panel-section">
+      <div class="panel-heading">Statistics</div>
       <div class="stats-grid">
         <div class="stat-cell">
-          <div class="stat-value" id="stat-dies">—</div>
-          <div class="stat-label">Total dies</div>
+          <div class="stat-val" id="stat-dies">—</div>
+          <div class="stat-lbl">Total</div>
         </div>
         <div class="stat-cell">
-          <div class="stat-value" id="stat-partial">—</div>
-          <div class="stat-label">Partial</div>
+          <div class="stat-val" id="stat-partial">—</div>
+          <div class="stat-lbl">Partial</div>
         </div>
-        <div class="stat-cell" style="grid-column:1/-1">
-          <div class="stat-value" id="stat-pass">—</div>
-          <div class="stat-label">Bin 1 (pass)</div>
+        <div class="stat-cell full">
+          <div class="stat-val" id="stat-pass">—</div>
+          <div class="stat-lbl">Bin 1 pass rate</div>
         </div>
       </div>
     </div>
 
-    <div class="panel">
-      <h3>Ring Stats</h3>
-      <table class="kv-table" id="ring-stats"></table>
+    <div class="sep"></div>
+
+    <div class="panel-section">
+      <div class="panel-heading">Ring yield</div>
+      <table class="spatial-table" id="ring-stats"></table>
     </div>
 
-    <div class="panel">
-      <h3>Quadrant Stats</h3>
-      <table class="kv-table" id="quadrant-stats"></table>
+    <div class="sep"></div>
+
+    <div class="panel-section">
+      <div class="panel-heading">Quadrant yield</div>
+      <table class="spatial-table" id="quadrant-stats"></table>
     </div>
 
-    <div class="panel">
-      <h3>Bin Legend</h3>
+    <div class="sep"></div>
+
+    <div class="panel-section">
+      <div class="panel-heading">Bin legend</div>
       <div class="bin-legend" id="bin-legend"></div>
     </div>
 
-  </div>
+  </aside>
 </div>
 
 <script type="module" src="main.js"></script>

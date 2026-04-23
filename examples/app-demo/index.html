@@ -10,475 +10,606 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg: #eceef0;
-      --card: #fff;
-      --border: #dde0e4;
-      --accent: #1a6eff;
-      --accent-light: #d0e4ff;
-      --text: #222;
-      --muted: #777;
-      --radius: 8px;
+      --bg:           #f0f2f5;
+      --surface:      #ffffff;
+      --border:       #e2e5ea;
+      --accent:       #2563eb;
+      --accent-dim:   #dbeafe;
+      --text:         #1a1d23;
+      --muted:        #6b7280;
+      --danger:       #ef4444;
+      --radius:       10px;
+      --sidebar-w:    220px;
+      --header-h:     52px;
+      --shadow-sm:    0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+      --shadow:       0 4px 12px rgba(0,0,0,.10);
     }
 
+    html, body { height: 100%; }
+
     body {
-      font-family: system-ui, sans-serif;
+      font-family: system-ui, -apple-system, sans-serif;
       font-size: 13px;
       background: var(--bg);
       color: var(--text);
       display: flex;
       flex-direction: column;
-      min-height: 100vh;
     }
 
-    /* ── Header ─────────────────────────────────────── */
+    /* ── Header ──────────────────────────────────────────── */
     #header {
-      background: #1a1f2e;
-      color: #e8eaf0;
-      padding: 0 20px;
-      height: 48px;
+      height: var(--header-h);
+      background: #0f1623;
+      color: #e2e8f0;
       display: flex;
       align-items: center;
       gap: 16px;
+      padding: 0 20px;
       flex-shrink: 0;
+      z-index: 10;
     }
 
-    #header h1 {
+    #header .wordmark {
       font-size: 15px;
-      font-weight: 600;
-      letter-spacing: .03em;
-      color: #e8eaf0;
+      font-weight: 700;
+      letter-spacing: -.01em;
+      color: #f1f5f9;
     }
 
-    #header .tagline {
-      font-size: 11px;
-      color: #8892a4;
+    #header .wordmark span { color: #60a5fa; }
+
+    #header .divider {
+      width: 1px; height: 20px;
+      background: #2d3748;
     }
+
+    #file-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 5px 10px 5px 8px;
+      cursor: pointer;
+      transition: background .15s, border-color .15s;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    #file-pill:hover { background: #273549; border-color: #4b6080; }
+    #file-pill.has-file { color: #e2e8f0; }
+    #file-pill svg { flex-shrink: 0; }
+    #file-pill.drag-over { border-color: var(--accent); background: #1e3a5f; }
+
+    #file-pill-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     #header .spacer { flex: 1; }
 
-    /* ── Upload zone ──────────────────────────────── */
-    #upload-section {
-      padding: 20px 20px 0;
-    }
-
-    #drop-zone {
-      border: 2px dashed var(--border);
-      border-radius: var(--radius);
-      background: var(--card);
-      padding: 28px;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color .15s, background .15s;
-    }
-
-    #drop-zone:hover, #drop-zone.drag-over {
-      border-color: var(--accent);
-      background: #f0f5ff;
-    }
-
-    #drop-zone .drop-icon { font-size: 28px; margin-bottom: 8px; }
-    #drop-zone p { color: var(--muted); font-size: 13px; }
-    #drop-zone strong { color: var(--accent); }
-    #file-name { font-size: 11px; color: var(--muted); margin-top: 6px; text-align: center; }
-
-    /* ── Config panel ────────────────────────────── */
-    #config-section {
-      margin: 12px 20px 0;
-      background: var(--card);
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
-      padding: 14px 16px;
-    }
-
-    .config-title {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      color: var(--muted);
-      letter-spacing: .05em;
-      margin-bottom: 12px;
-    }
-
-    .config-grid {
+    #header-meta {
       display: flex;
-      flex-wrap: wrap;
-      gap: 10px 18px;
-      align-items: flex-start;
+      align-items: center;
+      gap: 16px;
+      font-size: 11px;
+      color: #64748b;
     }
 
-    .cfg-group {
+    #header-meta .meta-stat { display: flex; flex-direction: column; align-items: flex-end; }
+    #header-meta .meta-val  { font-size: 13px; font-weight: 600; color: #94a3b8; line-height: 1.2; }
+
+    /* ── App shell ───────────────────────────────────────── */
+    #shell {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ─────────────────────────────────────────── */
+    #sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
-      gap: 3px;
+      overflow-y: auto;
+      padding: 14px 12px;
+      gap: 16px;
     }
 
-    .cfg-group label {
+    .sidebar-section { display: flex; flex-direction: column; gap: 6px; }
+
+    .sidebar-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted);
+      padding: 0 2px;
+    }
+
+    /* Config form */
+    .cfg-row {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .cfg-row label {
       font-size: 11px;
       font-weight: 600;
       color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: .03em;
     }
 
-    .cfg-group select, .cfg-group input[type=number] {
+    .cfg-row select {
+      width: 100%;
       padding: 5px 7px;
       border: 1px solid var(--border);
-      border-radius: 5px;
+      border-radius: 6px;
       font-size: 12px;
-      background: #fafafa;
-      min-width: 110px;
+      background: #fafbfc;
+      color: var(--text);
+      appearance: auto;
     }
-
-    .cfg-group.value-cols {
-      max-width: 300px;
-    }
+    .cfg-row select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
 
     #cfg-valuecols {
       display: flex;
-      flex-wrap: wrap;
-      gap: 4px 10px;
-      padding: 5px 0;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 120px;
+      overflow-y: auto;
     }
 
     .check-label {
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 6px;
       font-size: 12px;
       cursor: pointer;
+      padding: 2px 0;
     }
+    .check-label input[type=checkbox] { accent-color: var(--accent); }
 
-    .cfg-hint {
-      font-size: 10px;
-      color: #aaa;
-      margin-top: 2px;
-    }
-
-    .cfg-row-btns {
-      display: flex;
-      align-items: flex-end;
-      gap: 8px;
-      padding-bottom: 2px;
-    }
-
+    /* Buttons */
     .btn {
-      padding: 6px 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      padding: 6px 12px;
       border: 1px solid var(--border);
-      border-radius: 5px;
+      border-radius: 6px;
       font-size: 12px;
       font-weight: 600;
-      background: #fafafa;
+      background: var(--surface);
+      color: var(--text);
       cursor: pointer;
-      transition: background .1s;
+      transition: background .12s, border-color .12s;
+      white-space: nowrap;
     }
-    .btn:hover { background: #eee; }
+    .btn:hover { background: #f3f4f6; }
     .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-    .btn.primary:hover { background: #1558d0; }
-    .btn.active { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
+    .btn.primary:hover { background: #1d4ed8; }
+    .btn.active { background: var(--accent-dim); border-color: #93c5fd; color: var(--accent); }
+    .btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+    .btn.full { width: 100%; }
     .btn.sm { padding: 4px 9px; font-size: 11px; font-weight: 500; }
 
-    /* ── Main layout ─────────────────────────────── */
-    #main {
-      flex: 1;
-      padding: 12px 20px 20px;
+    /* Toggle group */
+    .toggle-row {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 4px;
     }
 
-    /* ── Analytics row ───────────────────────────── */
+    .toggle-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text);
+      cursor: pointer;
+      padding: 3px 0;
+    }
+
+    .toggle-item input[type=checkbox] { accent-color: var(--accent); width: 14px; height: 14px; }
+
+    /* View tabs */
+    .tab-group {
+      display: flex;
+      background: #f3f4f6;
+      border-radius: 7px;
+      padding: 3px;
+      gap: 2px;
+    }
+
+    .tab-group .btn {
+      flex: 1;
+      background: transparent;
+      border: none;
+      border-radius: 5px;
+      font-size: 11px;
+      padding: 5px 4px;
+      color: var(--muted);
+    }
+    .tab-group .btn:hover { background: #e5e7eb; color: var(--text); }
+    .tab-group .btn.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+
+    /* Separator */
+    .sep { height: 1px; background: var(--border); margin: 0 -12px; }
+
+    /* ── Content area ────────────────────────────────────── */
+    #content {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding: 16px 18px 20px;
+    }
+
+    /* ── Drop zone (inline, not full-page) ───────────────── */
+    #drop-banner {
+      background: var(--surface);
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 36px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    #drop-banner:hover, #drop-banner.drag-over {
+      border-color: var(--accent);
+      background: #eff6ff;
+    }
+
+    #drop-banner .drop-icon { font-size: 32px; margin-bottom: 10px; }
+    #drop-banner h2 { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+    #drop-banner p { font-size: 12px; color: var(--muted); line-height: 1.5; }
+    #drop-banner p strong { color: var(--accent); }
+    #drop-banner .hint { margin-top: 8px; font-size: 11px; color: #9ca3af; }
+
+    /* ── Analytics row ───────────────────────────────────── */
     #analytics-section {
       display: grid;
-      grid-template-columns: 1fr 1.4fr;
-      gap: 12px;
+      grid-template-columns: 1fr 1.5fr;
+      gap: 14px;
     }
 
     .chart-card {
-      background: var(--card);
+      background: var(--surface);
       border-radius: var(--radius);
       border: 1px solid var(--border);
-      padding: 4px;
-      min-height: 300px;
+      box-shadow: var(--shadow-sm);
+      min-height: 280px;
     }
 
-    /* ── Map section ─────────────────────────────── */
-    #map-section { display: flex; flex-direction: column; gap: 8px; }
+    /* ── Gallery area ────────────────────────────────────── */
+    #map-section { display: flex; flex-direction: column; gap: 10px; }
 
-    #map-toolbar {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 8px 12px;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .ctrl-group {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-
-    .ctrl-group + .ctrl-group {
-      padding-left: 10px;
-      border-left: 1px solid var(--border);
-    }
-
-    .ctrl-label {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-
-    .ctrl-group select {
-      padding: 4px 6px;
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      font-size: 12px;
-      background: #fafafa;
-    }
-
-    /* View tabs */
-    .view-tabs { display: flex; gap: 4px; }
-
-    /* Wafer selection bar */
+    /* Wafer selection chips */
     #wafer-selection-bar {
       display: flex;
       align-items: center;
       gap: 8px;
       flex-wrap: wrap;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 12px;
+      box-shadow: var(--shadow-sm);
     }
 
-    #wafer-chips {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 5px;
-      flex: 1;
-    }
+    #wafer-chips { display: flex; flex-wrap: wrap; gap: 5px; flex: 1; }
 
     .chip {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      background: var(--accent-light);
-      border: 1px solid #9bc1ff;
-      border-radius: 12px;
-      padding: 2px 8px 2px 10px;
+      gap: 3px;
+      background: var(--accent-dim);
+      border: 1px solid #bfdbfe;
+      border-radius: 20px;
+      padding: 2px 8px 2px 9px;
       font-size: 11px;
       font-weight: 600;
       color: var(--accent);
     }
 
     .chip-remove {
-      background: none;
-      border: none;
-      cursor: pointer;
-      color: var(--accent);
-      font-size: 13px;
-      line-height: 1;
-      padding: 0 1px;
-      opacity: 0.7;
+      background: none; border: none; cursor: pointer;
+      color: #93c5fd; font-size: 14px; line-height: 1; padding: 0 1px;
+      opacity: .7;
     }
-    .chip-remove:hover { opacity: 1; }
+    .chip-remove:hover { opacity: 1; color: var(--accent); }
+
+    .chip-actions { display: flex; gap: 5px; align-items: center; }
 
     /* Gallery grid */
     #wafermap-gallery {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 10px;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 12px;
     }
 
     .map-card {
-      background: var(--card);
+      background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
+      box-shadow: var(--shadow-sm);
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
 
     .map-card-header {
       display: flex;
-      align-items: baseline;
+      align-items: center;
       justify-content: space-between;
-      padding: 7px 10px 4px;
+      padding: 8px 10px 6px;
       border-bottom: 1px solid var(--border);
     }
 
     .map-card-title { font-weight: 700; font-size: 13px; }
-    .map-card-sub { font-size: 10px; color: var(--muted); }
+    .map-card-sub   { font-size: 10px; color: var(--muted); }
 
     .map-card-remove {
-      background: none;
-      border: none;
-      cursor: pointer;
-      color: #bbb;
-      font-size: 16px;
-      line-height: 1;
-      padding: 0;
+      background: none; border: none; cursor: pointer;
+      color: #d1d5db; font-size: 18px; line-height: 1; padding: 0;
     }
-    .map-card-remove:hover { color: #e74c3c; }
+    .map-card-remove:hover { color: var(--danger); }
 
-    .map-chart {
-      aspect-ratio: 1;
-      width: 100%;
-    }
+    .map-chart { aspect-ratio: 1; width: 100%; }
 
     .map-stats {
-      padding: 6px 8px;
-      border-top: 1px solid #f0f0f0;
+      padding: 6px 9px;
+      border-top: 1px solid var(--border);
       display: flex;
       flex-wrap: wrap;
       gap: 4px;
-      min-height: 26px;
+      min-height: 28px;
+      background: #fafbfc;
     }
 
     .stat-chip {
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
       font-size: 10px;
-      padding: 2px 6px;
+      padding: 2px 7px;
       border: 1px solid var(--border);
       border-radius: 10px;
       color: var(--muted);
+      background: var(--surface);
+    }
+
+    .stat-chip-dot {
+      width: 8px; height: 8px;
+      border-radius: 2px;
+      flex-shrink: 0;
     }
 
     .empty-msg {
       grid-column: 1 / -1;
       color: var(--muted);
-      padding: 24px;
+      padding: 40px 24px;
       text-align: center;
+      font-size: 13px;
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+
+    /* ── Placeholder state ───────────────────────────────── */
+    .sidebar-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      gap: 8px;
+      color: var(--muted);
+      text-align: center;
+      padding: 20px 8px;
       font-size: 12px;
     }
+    .sidebar-placeholder svg { opacity: .3; }
   </style>
 </head>
 <body>
 
+<!-- ── Header ───────────────────────────────────────────────────────────── -->
 <div id="header">
-  <h1>wafermap analyzer</h1>
-  <span class="tagline">Load a CSV · Explore bin distributions · Visualise wafermaps</span>
+  <div class="wordmark">wafer<span>map</span></div>
+  <div class="divider"></div>
+
+  <div id="file-pill" title="Click to open a CSV file">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+    </svg>
+    <span id="file-pill-name">Open CSV…</span>
+  </div>
+
   <div class="spacer"></div>
+
+  <div id="header-meta" hidden>
+    <div class="meta-stat">
+      <span class="meta-val" id="hm-wafers">—</span>
+      <span>wafers</span>
+    </div>
+    <div class="meta-stat">
+      <span class="meta-val" id="hm-dies">—</span>
+      <span>dies / wafer</span>
+    </div>
+    <div class="meta-stat">
+      <span class="meta-val" id="hm-bins">—</span>
+      <span>bins</span>
+    </div>
+  </div>
 </div>
 
-<div id="upload-section">
-  <div id="drop-zone">
-    <div class="drop-icon">📂</div>
-    <p><strong>Drop a CSV file here</strong> or click to browse</p>
-    <p style="margin-top:4px;font-size:11px;">Expected columns: wafer ID, die X (grid), die Y (grid), hard bin — plus any number of test value columns</p>
-  </div>
-  <p id="file-name"></p>
-  <input type="file" id="file-input" accept=".csv" style="display:none">
-</div>
+<input type="file" id="file-input" accept=".csv" style="display:none">
 
-<!-- Config panel -->
-<section id="config-section" hidden>
-  <div class="config-title">Column Mapping &amp; Geometry</div>
-  <div class="config-grid">
+<!-- ── App shell ─────────────────────────────────────────────────────────── -->
+<div id="shell">
 
-    <div class="cfg-group">
-      <label>Wafer ID</label>
-      <select id="cfg-wafer"></select>
+  <!-- ── Sidebar ──────────────────────────────────────────────────────────── -->
+  <nav id="sidebar">
+
+    <!-- Empty state -->
+    <div class="sidebar-placeholder" id="sidebar-empty">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="9" y1="13" x2="15" y2="13"/>
+        <line x1="9" y1="17" x2="15" y2="17"/>
+      </svg>
+      <p>Open a CSV file to get started</p>
     </div>
 
-    <div class="cfg-group">
-      <label>Die X (column index)</label>
-      <select id="cfg-x"></select>
+    <!-- Config section (hidden until file loaded) -->
+    <div id="sidebar-config" hidden>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Column mapping</div>
+
+        <div class="cfg-row">
+          <label>Wafer ID</label>
+          <select id="cfg-wafer"></select>
+        </div>
+        <div class="cfg-row">
+          <label>Die X</label>
+          <select id="cfg-x"></select>
+        </div>
+        <div class="cfg-row">
+          <label>Die Y</label>
+          <select id="cfg-y"></select>
+        </div>
+        <div class="cfg-row">
+          <label>Hard bin</label>
+          <select id="cfg-hbin"></select>
+        </div>
+        <div class="cfg-row">
+          <label>Soft bin</label>
+          <select id="cfg-sbin"></select>
+        </div>
+        <div class="cfg-row">
+          <label>Test value columns</label>
+          <div id="cfg-valuecols"></div>
+        </div>
+
+        <button class="btn primary full" id="btn-process">Visualise →</button>
+      </div>
     </div>
 
-    <div class="cfg-group">
-      <label>Die Y (row index)</label>
-      <select id="cfg-y"></select>
-    </div>
+    <!-- Controls (hidden until processed) -->
+    <div id="sidebar-controls" hidden>
 
-    <div class="cfg-group">
-      <label>Hard Bin</label>
-      <select id="cfg-hbin"></select>
-    </div>
-
-    <div class="cfg-group">
-      <label>Soft Bin (optional)</label>
-      <select id="cfg-sbin"></select>
-    </div>
-
-    <div class="cfg-group">
-      <label>Pass Bin</label>
-      <select id="cfg-passbin"><option value="">None</option></select>
-      <span class="cfg-hint">Used to sort yield chart</span>
-    </div>
-
-    <div class="cfg-group value-cols">
-      <label>Test Value Columns</label>
-      <div id="cfg-valuecols"></div>
-    </div>
-
-    <div class="cfg-row-btns">
-      <button class="btn primary" id="btn-process">Visualise →</button>
-    </div>
-
-  </div>
-</section>
-
-<div id="main">
-
-  <!-- Analytics charts -->
-  <section id="analytics-section" hidden>
-    <div class="chart-card" id="chart-pareto"></div>
-    <div class="chart-card" id="chart-yield">
-      <p style="padding:12px;color:var(--muted);font-size:12px;">Click wafer bars to add them to the wafermap gallery.</p>
-    </div>
-  </section>
-
-  <!-- Wafermap section -->
-  <section id="map-section" hidden>
-
-    <div id="map-toolbar">
-      <div class="ctrl-group view-tabs">
-        <button class="btn active" id="btn-view-maps">Wafer Maps</button>
-        <button class="btn" id="btn-view-bingallery">Bin Gallery</button>
+      <div class="sidebar-section">
+        <div class="sidebar-label">View</div>
+        <div class="tab-group">
+          <button class="btn active" id="btn-view-maps">Maps</button>
+          <button class="btn" id="btn-view-bingallery">Bin Gallery</button>
+        </div>
       </div>
 
-      <div class="ctrl-group" id="wafer-selection-bar">
+      <div class="sep"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">Plot mode</div>
+        <select id="map-mode" style="width:100%;padding:5px 7px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:#fafbfc;"></select>
+        <div id="map-channel-group">
+          <select id="map-channel" style="width:100%;padding:5px 7px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:#fafbfc;margin-top:5px;"></select>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">Appearance</div>
+        <div class="cfg-row">
+          <label>Colour scheme</label>
+          <select id="map-color" style="width:100%;padding:5px 7px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:#fafbfc;">
+            <option value="color">Colour</option>
+            <option value="greyscale">Greyscale</option>
+          </select>
+        </div>
+        <div class="cfg-row">
+          <label>Highlight bin</label>
+          <select id="map-highlight" style="width:100%;padding:5px 7px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:#fafbfc;"></select>
+        </div>
+        <div class="cfg-row">
+          <label>Pass bin (yield sort)</label>
+          <select id="cfg-passbin" style="width:100%;padding:5px 7px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:#fafbfc;"><option value="">None</option></select>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">Overlays</div>
+        <div class="toggle-row">
+          <label class="toggle-item">
+            <span>Rings</span>
+            <input type="checkbox" id="btn-rings">
+          </label>
+          <label class="toggle-item">
+            <span>Quadrants</span>
+            <input type="checkbox" id="btn-quadrants">
+          </label>
+          <label class="toggle-item">
+            <span>XY indicator</span>
+            <input type="checkbox" id="btn-xy">
+          </label>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">File</div>
+        <button class="btn full" id="btn-reopen">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          Open another file…
+        </button>
+      </div>
+
+    </div>
+  </nav>
+
+  <!-- ── Content ────────────────────────────────────────────────────────── -->
+  <main id="content">
+
+    <!-- Drop banner (initial state) -->
+    <div id="drop-banner">
+      <div class="drop-icon">📊</div>
+      <h2>Drop a CSV file here</h2>
+      <p>Or click the <strong>Open CSV…</strong> button in the header</p>
+      <p class="hint">Expected columns: wafer ID · die X · die Y · hard bin · test values</p>
+    </div>
+
+    <!-- Analytics charts -->
+    <section id="analytics-section" hidden>
+      <div class="chart-card" id="chart-pareto"></div>
+      <div class="chart-card" id="chart-yield"></div>
+    </section>
+
+    <!-- Wafermap section -->
+    <section id="map-section" hidden>
+
+      <div id="wafer-selection-bar">
         <div id="wafer-chips"></div>
-        <button class="btn sm" id="btn-select-all">All</button>
-        <button class="btn sm" id="btn-clear-selection">Clear</button>
+        <div class="chip-actions">
+          <button class="btn sm" id="btn-select-all">All</button>
+          <button class="btn sm" id="btn-clear-selection">Clear</button>
+        </div>
       </div>
 
-      <div class="ctrl-group">
-        <span class="ctrl-label">Mode</span>
-        <select id="map-mode"></select>
+      <div id="wafermap-gallery">
+        <p class="empty-msg">Select wafers from the distribution chart, or click <strong>All</strong>.</p>
       </div>
 
-      <div class="ctrl-group" id="map-channel-group" hidden>
-        <span class="ctrl-label">Test</span>
-        <select id="map-channel"></select>
-      </div>
+    </section>
 
-      <div class="ctrl-group">
-        <span class="ctrl-label">Colour</span>
-        <select id="map-color">
-          <option value="color">Colour</option>
-          <option value="greyscale">Greyscale</option>
-        </select>
-      </div>
-
-      <div class="ctrl-group">
-        <span class="ctrl-label">Highlight Bin</span>
-        <select id="map-highlight"></select>
-      </div>
-
-      <div class="ctrl-group">
-        <button class="btn sm" id="btn-rings">Rings</button>
-        <button class="btn sm" id="btn-quadrants">Quadrants</button>
-        <button class="btn sm" id="btn-xy">XY</button>
-      </div>
-    </div>
-
-    <div id="wafermap-gallery">
-      <p class="empty-msg">Load a CSV file and click Visualise to get started.</p>
-    </div>
-
-  </section>
-
+  </main>
 </div>
 
 <script type="module" src="app.js"></script>
