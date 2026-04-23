@@ -7,16 +7,97 @@ export interface PitchResult {
   confidence: number;
 }
 
+// ── Nearest-neighbour pitch estimation ────────────────────────────────────────
+
+/**
+ * Return the most-frequent (mode) value from an array of positive numbers.
+ * Values are rounded to one decimal place before counting to absorb
+ * floating-point noise from prober step data.
+ */
+function modeOf(values: number[]): number | null {
+  if (!values.length) return null;
+  const counts = new Map<number, number>();
+  for (const v of values) {
+    const key = Math.round(v * 10) / 10;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  let maxCount = 0;
+  let result = values[0];
+  for (const [v, count] of counts) {
+    if (count > maxCount) { maxCount = count; result = v; }
+  }
+  return result;
+}
+
+/**
+ * Estimate die pitch by finding the mode of adjacent-step distances within
+ * rows (for X pitch) and within columns (for Y pitch).
+ *
+ * Works well even with sparse datasets where the circular-constraint aspect
+ * ratio is unreliable (e.g., quarter-wafer coverage, strip lots).
+ *
+ * Returns null when the dataset is too small to derive both pitches.
+ */
+function computeNearestNeighborPitch(
+  gridPoints: Array<{ x: number; y: number }>,
+): { pitchX: number; pitchY: number } | null {
+  if (gridPoints.length < 2) return null;
+
+  const pts = gridPoints.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) }));
+
+  // Group by row (Y value) to collect X step distances.
+  const byRow = new Map<number, number[]>();
+  for (const p of pts) {
+    const xs = byRow.get(p.y) ?? [];
+    xs.push(p.x);
+    byRow.set(p.y, xs);
+  }
+  const xSteps: number[] = [];
+  for (const xs of byRow.values()) {
+    xs.sort((a, b) => a - b);
+    for (let index = 1; index < xs.length; index++) {
+      const d = xs[index] - xs[index - 1];
+      if (d > 0) xSteps.push(d);
+    }
+  }
+
+  // Group by column (X value) to collect Y step distances.
+  const byCol = new Map<number, number[]>();
+  for (const p of pts) {
+    const ys = byCol.get(p.x) ?? [];
+    ys.push(p.y);
+    byCol.set(p.x, ys);
+  }
+  const ySteps: number[] = [];
+  for (const ys of byCol.values()) {
+    ys.sort((a, b) => a - b);
+    for (let index = 1; index < ys.length; index++) {
+      const d = ys[index] - ys[index - 1];
+      if (d > 0) ySteps.push(d);
+    }
+  }
+
+  const pitchX = modeOf(xSteps);
+  const pitchY = modeOf(ySteps);
+
+  if (pitchX === null && pitchY === null) return null;
+  // When one axis has no adjacent pairs, fall back to the other axis value.
+  const px = pitchX ?? pitchY!;
+  const py = pitchY ?? pitchX!;
+  return { pitchX: px, pitchY: py };
+}
+
+// ── Public resolver ───────────────────────────────────────────────────────────
+
 /**
  * Resolve die pitch from prober-step grid positions and optional geometry.
  *
  * Input x,y are integer prober step coordinates (die grid positions), not mm.
  * Physical mm position = grid_pos × pitch.
  *
- * When neither die dimensions nor wafer diameter are known, the wafer's
- * circular shape constrains the aspect ratio:
- *   (x_range × pitchX) ≈ (y_range × pitchY)   [both span the full diameter]
- * Setting pitchX = 1 (normalised unit) gives pitchY = x_range / y_range.
+ * When neither die dimensions nor wafer diameter are known, the function tries
+ * nearest-neighbour step analysis first (works well for regular grids with ≥ 4
+ * points), then falls back to the circular-wafer aspect-ratio constraint.
  */
 export function resolveGridPitch(
   gridPoints: Array<{ x: number; y: number }>,
@@ -74,7 +155,23 @@ export function resolveGridPitch(
     };
   }
 
-  // Case 5: Nothing provided — normalised units, aspect ratio from circular constraint.
+  // Case 5: Nothing provided — attempt nearest-neighbour step analysis first.
+  // This yields integer step sizes (e.g. pitchX=1, pitchY=1 for a 1-step grid)
+  // in normalised units; the physical scale is still unknown but the aspect
+  // ratio is more robust than the circular constraint for sparse/non-circular data.
+  const nn = computeNearestNeighborPitch(gridPoints);
+  if (nn !== null) {
+    // Normalise so that pitchX = 1; preserve the derived aspect ratio.
+    const scale = nn.pitchX;
+    return {
+      pitchX: 1,
+      pitchY: nn.pitchY / scale,
+      units: 'normalised',
+      confidence: 0.5,
+    };
+  }
+
+  // Final fallback: circular-wafer constraint.
   // pitchX = 1 unit; pitchY = xRange / yRange keeps physical extents equal.
   return {
     pitchX: 1,

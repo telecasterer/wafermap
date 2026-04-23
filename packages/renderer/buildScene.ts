@@ -41,7 +41,7 @@ export interface SceneHoverPoint {
 }
 
 export interface SceneOverlay {
-  kind: 'wafer-boundary' | 'wafer-flat' | 'reticle' | 'probe-path' | 'ring-boundary' | 'quadrant-boundary' | 'xy-indicator';
+  kind: 'wafer-boundary' | 'reticle' | 'probe-path' | 'ring-boundary' | 'quadrant-boundary' | 'xy-indicator';
   path: string;
   lineColor: string;
   lineWidth: number;
@@ -96,6 +96,7 @@ interface ColorFns {
 
 const PARTIAL_DIE_FILL = '#d3d6db';
 const DIM_FILL = '#e8e9ea';
+const EDGE_EXCLUDED_FILL = '#eceef0';
 
 function normalizeTransform(
   wafer: Wafer,
@@ -138,30 +139,34 @@ function transformPoint(point: Point, center: Point, transform: TransformState):
   return next;
 }
 
+/**
+ * Returns the boundary point at `angle` for a wafer with an orientation flat
+ * (chord cut).  V-notch wafers are handled separately in buildBoundaryOverlay.
+ */
 function boundaryPointAtAngle(wafer: Wafer, angle: number): Point {
-  const { center, radius, flat } = wafer;
+  const { center, radius, notch } = wafer;
   let x = center.x + radius * Math.cos(angle);
   let y = center.y + radius * Math.sin(angle);
 
-  if (!flat) return { x, y };
+  if (!notch) return { x, y };
 
-  const flatDistance = Math.sqrt(radius ** 2 - (flat.length / 2) ** 2);
-  const halfFlatLength = flat.length / 2;
+  const chordDist = Math.sqrt(radius ** 2 - (notch.length / 2) ** 2);
+  const halfLen   = notch.length / 2;
   const dx = x - center.x;
   const dy = y - center.y;
 
-  if (flat.type === 'bottom' && dy < -flatDistance) {
-    y = center.y - flatDistance;
-    x = center.x + Math.max(-halfFlatLength, Math.min(halfFlatLength, dx));
-  } else if (flat.type === 'top' && dy > flatDistance) {
-    y = center.y + flatDistance;
-    x = center.x + Math.max(-halfFlatLength, Math.min(halfFlatLength, dx));
-  } else if (flat.type === 'left' && dx < -flatDistance) {
-    x = center.x - flatDistance;
-    y = center.y + Math.max(-halfFlatLength, Math.min(halfFlatLength, dy));
-  } else if (flat.type === 'right' && dx > flatDistance) {
-    x = center.x + flatDistance;
-    y = center.y + Math.max(-halfFlatLength, Math.min(halfFlatLength, dy));
+  if (notch.type === 'bottom' && dy < -chordDist) {
+    y = center.y - chordDist;
+    x = center.x + Math.max(-halfLen, Math.min(halfLen, dx));
+  } else if (notch.type === 'top' && dy > chordDist) {
+    y = center.y + chordDist;
+    x = center.x + Math.max(-halfLen, Math.min(halfLen, dx));
+  } else if (notch.type === 'left' && dx < -chordDist) {
+    x = center.x - chordDist;
+    y = center.y + Math.max(-halfLen, Math.min(halfLen, dy));
+  } else if (notch.type === 'right' && dx > chordDist) {
+    x = center.x + chordDist;
+    y = center.y + Math.max(-halfLen, Math.min(halfLen, dy));
   }
 
   return { x, y };
@@ -261,21 +266,81 @@ export function generateTextOverlay(
   });
 }
 
+/**
+ * Notch direction angle in radians.
+ * Wafer convention: bottom notch points downward (−Y), which is angle −π/2.
+ */
+function notchAngle(type: 'top' | 'bottom' | 'left' | 'right'): number {
+  if (type === 'top')    return  Math.PI / 2;
+  if (type === 'bottom') return -Math.PI / 2;
+  if (type === 'left')   return  Math.PI;
+  return 0; // right
+}
+
+/**
+ * Build the wafer boundary overlay, choosing between two rendering modes:
+ *
+ * - **Flat** (≤ 150 mm): straight chord cut — `boundaryPointAtAngle` handles it.
+ * - **V-notch** (> 150 mm): three explicit points (entry → apex → exit) are
+ *   spliced into the uniform circle trace so the notch renders as a sharp
+ *   triangular indentation (~3.5 mm wide, ~1.25 mm deep — SEMI M1 standard).
+ */
 function buildBoundaryOverlay(wafer: Wafer, transform: TransformState, steps = 720): SceneOverlay[] {
-  const { center } = wafer;
+  const { center, radius, notch } = wafer;
+
+  // Determine rendering style from diameter — same threshold used in resolveNotch.
+  const isVNotch = notch !== undefined && wafer.diameter > 150;
+
+  if (!isVNotch) {
+    // Flat / no alignment feature — uniform angle sweep with chord clamping.
+    const points: Point[] = [];
+    for (let index = 0; index <= steps; index++) {
+      const angle = (2 * Math.PI * index) / steps;
+      points.push(transformPoint(boundaryPointAtAngle(wafer, angle), center, transform));
+    }
+    return [{ kind: 'wafer-boundary', path: polylinePath(points, true), lineColor: '#111111', lineWidth: 2 }];
+  }
+
+  // V-notch: build circle, then splice in the triangular indentation.
+  // SEMI M1: half-width at surface ≈ 1.75 mm, depth ≈ 1.25 mm.
+  const notchDepth     = 1.25;
+  const notchHalfWidth = notch.length; // set by createWafer = 1.75 for large wafers
+  const θ0             = notchAngle(notch.type);
+  const Δ              = Math.atan2(notchHalfWidth, radius); // angular half-span (~0.67° for 300 mm)
+  const apexRadius     = radius - notchDepth;
+
+  // Collect uniform circle points, skipping any that fall inside the notch zone.
   const points: Point[] = [];
+  let notchInserted = false;
 
   for (let index = 0; index <= steps; index++) {
     const angle = (2 * Math.PI * index) / steps;
-    points.push(transformPoint(boundaryPointAtAngle(wafer, angle), center, transform));
+
+    // Normalise angle difference to (−π, π].
+    let dθ = angle - θ0;
+    while (dθ >  Math.PI) dθ -= 2 * Math.PI;
+    while (dθ < -Math.PI) dθ += 2 * Math.PI;
+
+    if (Math.abs(dθ) <= Δ) {
+      // Inside the notch arc — insert V geometry once at this crossing.
+      if (!notchInserted) {
+        notchInserted = true;
+        const entry = { x: center.x + radius * Math.cos(θ0 - Δ), y: center.y + radius * Math.sin(θ0 - Δ) };
+        const apex  = { x: center.x + apexRadius * Math.cos(θ0), y: center.y + apexRadius * Math.sin(θ0) };
+        const exit_ = { x: center.x + radius * Math.cos(θ0 + Δ), y: center.y + radius * Math.sin(θ0 + Δ) };
+        points.push(
+          transformPoint(entry, center, transform),
+          transformPoint(apex,  center, transform),
+          transformPoint(exit_, center, transform),
+        );
+      }
+      continue;
+    }
+
+    points.push(transformPoint({ x: center.x + radius * Math.cos(angle), y: center.y + radius * Math.sin(angle) }, center, transform));
   }
 
-  return [{
-    kind: 'wafer-boundary',
-    path: polylinePath(points, true),
-    lineColor: '#111111',
-    lineWidth: 2,
-  }];
+  return [{ kind: 'wafer-boundary', path: polylinePath(points, true), lineColor: '#111111', lineWidth: 2 }];
 }
 
 function buildRingOverlays(wafer: Wafer, transform: TransformState, ringCount: number, steps = 360): SceneOverlay[] {
@@ -374,6 +439,15 @@ function pushDieRectangles(
     rectangles.push({
       x: die.x, y: die.y, width: rw, height: rh,
       fill: PARTIAL_DIE_FILL, type: 'stacked', metadata: die.metadata,
+      path: rectanglePath(die, rw, rh, transform),
+    });
+    return;
+  }
+
+  if (die.edgeExcluded) {
+    rectangles.push({
+      x: die.x, y: die.y, width: rw, height: rh,
+      fill: EDGE_EXCLUDED_FILL, type: 'stacked', metadata: die.metadata,
       path: rectanglePath(die, rw, rh, transform),
     });
     return;
@@ -544,11 +618,18 @@ export function buildScene(
   const normalize = (v: number) => Math.max(0, Math.min(1, (v - vMin) / (vMax - vMin)));
 
   const transform = normalizeTransform(wafer, interactiveTransform);
+
+  // Cap the visual kerf gap at 12 % of the smallest die dimension so that
+  // normalised-unit scenes (die pitch ≈ 1) remain visible. No effect for
+  // standard 10 mm dies: min(1, 10 × 0.12 = 1.2) = 1.
+  const minDim = dies.reduce((m, d) => Math.min(m, d.width, d.height), Infinity);
+  const gap = Number.isFinite(minDim) ? Math.min(dieGap, minDim * 0.12) : dieGap;
+
   const rectangles: SceneRect[] = [];
   const hoverPoints: SceneHoverPoint[] = [];
 
   for (const die of dies) {
-    pushDieRectangles(rectangles, die, plotMode, transform, dieGap, colorFns, highlightBin, normalize);
+    pushDieRectangles(rectangles, die, plotMode, transform, gap, colorFns, highlightBin, normalize);
     hoverPoints.push({ x: die.x, y: die.y, text: buildHoverText(die) });
   }
 

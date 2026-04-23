@@ -78,7 +78,7 @@ function loadWafer(waferId) {
 
   const wafer = createWafer({
     diameter: WAFER_DIAMETER,
-    flat: { type: 'bottom', length: 30 },
+    notch: { type: 'bottom' },
     orientation: 0,
     metadata: waferMeta,
   });
@@ -91,7 +91,7 @@ function loadWafer(waferId) {
 
   appState.wafer = wafer;
   appState.baseDies = oriented;
-  appState.reticles = generateReticleGrid(wafer, { width: 30, height: 30, stepX: 30, stepY: 30 });
+  appState.reticles = generateReticleGrid(wafer, { width: 3, height: 3, pitchX: DIE_SIZE.width, pitchY: DIE_SIZE.height });
 
   updateMetaPanel(waferMeta);
   redraw();

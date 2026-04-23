@@ -52,22 +52,36 @@ function parseCsv(text) {
 // ── Column auto-detection ─────────────────────────────────────────────────────
 
 function autoDetect(headers, rows) {
-  const find = (...patterns) =>
-    headers.find(h => patterns.some(p => h.toLowerCase().includes(p)));
+  const consumed = new Set();
 
-  const waferCol = find('wafer', 'wid', 'wafer_id') ?? headers[0];
-  const xCol     = find('die_x', 'diex', ' x', '_x') ?? find('col') ?? headers[1];
-  const yCol     = find('die_y', 'diey', ' y', '_y') ?? find('row') ?? headers[2];
-  const hbinCol  = find('hbin', 'hard_bin', 'hardbin', 'bin') ?? '';
-  const sbinCol  = find('sbin', 'soft_bin', 'softbin') ?? '';
+  // Exact case-insensitive match (prevents bare 'x' from being missed by
+  // substring patterns, and avoids consuming 'wafer' as the X column).
+  const findExact = (...names) =>
+    headers.find(h => !consumed.has(h) && names.some(n => h.toLowerCase() === n.toLowerCase()));
 
-  const reserved = new Set([waferCol, xCol, yCol, hbinCol, sbinCol].filter(Boolean));
-  reserved.add(find('lot', 'lotid') ?? '');
-  reserved.add(find('date', 'testdate') ?? '');
-  reserved.add(find('temp') ?? '');
+  // Substring fallback for prefixed variants like 'die_x', 'HBIN', etc.
+  const findSub = (...patterns) =>
+    headers.find(h => !consumed.has(h) && patterns.some(p => h.toLowerCase().includes(p)));
+
+  const nextFree = () => headers.find(h => !consumed.has(h));
+  const claim = col => { if (col) consumed.add(col); return col || ''; };
+
+  const waferCol = claim(findExact('wafer', 'wid', 'wafer_id') ?? findSub('wafer', 'wid') ?? headers[0] ?? '');
+  const xCol     = claim(findExact('x', 'die_x', 'diex') ?? findSub('die_x', 'diex', '_x', 'col') ?? nextFree() ?? headers[1] ?? '');
+  const yCol     = claim(findExact('y', 'die_y', 'diey') ?? findSub('die_y', 'diey', '_y', 'row') ?? nextFree() ?? headers[2] ?? '');
+  const hbinCol  = claim(findExact('hbin', 'bin') ?? findSub('hbin', 'hard_bin', 'hardbin') ?? '');
+  const sbinCol  = claim(findExact('sbin') ?? findSub('sbin', 'soft_bin', 'softbin') ?? '');
+
+  for (const col of [
+    findExact('lot', 'lotid')          ?? findSub('lot', 'lotid'),
+    findExact('testdate', 'date')      ?? findSub('testdate', 'date'),
+    findExact('temp', 'temperature')   ?? findSub('temp'),
+  ]) {
+    if (col) consumed.add(col);
+  }
 
   const valueCols = headers.filter(h => {
-    if (reserved.has(h)) return false;
+    if (consumed.has(h)) return false;
     return rows.slice(0, 20).some(r => r[h] !== '' && !isNaN(Number(r[h])));
   });
 

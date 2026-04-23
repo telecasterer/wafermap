@@ -64,10 +64,12 @@ buildWaferMap(data: WaferMapPoint[])
 
 // Object form — with optional geometry hints
 buildWaferMap({
-  data?:  WaferMapPoint[],
-  wafer?: WaferOptions,
-  die?:   DieOptions,
-  dies?:  Die[],   // pre-built die array; skips geometry generation
+  data?:    WaferMapPoint[],
+  wafer?:   WaferOptions,
+  die?:     DieOptions,
+  dies?:    Die[],      // pre-built die array; skips geometry generation
+  reticle?: ReticleOptions,
+  stack?:   StackOptions,
 })
 ```
 
@@ -88,10 +90,16 @@ All fields are optional.  Supply what you know; the library handles the rest.
 
 ```ts
 {
-  diameter?:    number                                // mm; inferred from grid extent × pitch if omitted
-  flat?:        { type: 'top' | 'bottom' | 'left' | 'right'; length: number }
-  orientation?: number                               // degrees, default 0
-  metadata?:    WaferMetadata
+  diameter?:      number   // mm; inferred from grid extent × pitch if omitted
+  notch?:         { type: 'top' | 'bottom' | 'left' | 'right' }
+                  // Orientation mark direction.  Standard dimensions are derived
+                  // from diameter automatically:
+                  //   ≤ 100 mm → 32.5 mm orientation flat  (SEMI M1)
+                  //   ≤ 150 mm → 57.5 mm orientation flat  (SEMI M1)
+                  //   > 150 mm → V-notch ~3.5 mm wide, 1.25 mm deep  (SEMI M1)
+  orientation?:   number   // degrees, default 0
+  edgeExclusion?: number   // mm from edge inward; dies in this band are dimmed
+  metadata?:      WaferMetadata
 }
 ```
 
@@ -99,13 +107,52 @@ All fields are optional.  Supply what you know; the library handles the rest.
 
 ```ts
 {
-  width?:  number   // die width in mm  — enables physical mm coordinates
-  height?: number   // die height in mm — enables physical mm coordinates
+  width?:          number   // die width in mm  — enables physical mm coordinates
+  height?:         number   // die height in mm — enables physical mm coordinates
+  origin?:         {
+    type: 'center'           // default — centroid offset applied automatically
+        | 'LL'               // (0,0) at lower-left; auto-detected when all x,y ≥ 0
+        | 'UL'               // (0,0) at upper-left  (flips display Y)
+        | 'LR'               // (0,0) at lower-right (flips display X)
+        | 'UR'               // (0,0) at upper-right (flips both)
+        | 'custom'           // apply explicit offset in grid steps
+    offset?: { x: number; y: number }   // used only when type is 'custom'
+  }
+  yAxisDirection?: 'up' | 'down'     // 'down' for row/matrix probers (default 'up')
+  xAxisDirection?: 'right' | 'left'  // 'left' for mirrored/backside probing (default 'right')
 }
 ```
 
 When `width` and `height` are omitted, the library estimates die dimensions from
-the grid layout using the circular-wafer constraint (see [Inference levels](#inference-levels)).
+the grid layout using nearest-neighbour step analysis first, falling back to the
+circular-wafer aspect-ratio constraint.
+
+#### `ReticleOptions`
+
+```ts
+{
+  width:    number   // field width in number of dies
+  height:   number   // field height in number of dies
+  anchor?:  { x: number; y: number }
+             // die index (i, j) that sits at the reticle's internal (0,0) corner.
+             // Controls the phase (alignment) of the reticle grid.  Default {0,0}.
+}
+```
+
+When provided, reticle overlays are shown by default (`showReticle` defaults to `true`).
+
+#### `StackOptions`
+
+Collapse data from multiple wafers into a single map before rendering.  When `stack`
+is present the top-level `data` field is ignored.
+
+```ts
+{
+  data:       WaferMapPoint[][]   // one array per wafer
+  aggr:       'mean' | 'median' | 'stddev' | 'count_bin' | 'mode' | 'percent'
+  targetBin?: number              // required for 'count_bin' and 'percent'
+}
+```
 
 ### Options
 
@@ -123,14 +170,19 @@ All [`BuildSceneOptions`](#buildscene) fields are supported, plus:
 
 ```ts
 {
-  wafer: Wafer
-  dies:  Die[]
-  scene: Scene        // pass to toPlotly()
-  units: 'mm' | 'normalised'
+  wafer:        Wafer
+  dies:         Die[]
+  scene:        Scene        // pass to toPlotly()
+  units:        'mm' | 'normalised'
   inference: {
     wafer:    { confidence: number; method: string }
     diePitch: { confidence: number; units: 'mm' | 'normalised' }
     grid:     { confidence: number }
+  }
+  dataCoverage: {
+    filledDies: number   // dies with at least one value or bin
+    totalDies:  number   // all dies inside the wafer boundary
+    ratio:      number   // filledDies / totalDies  ∈ [0, 1]
   }
 }
 ```
@@ -149,15 +201,18 @@ The library adapts to whatever geometry context you provide.  Four distinct leve
 
 | Provided | Inferred | `units` |
 | -------- | -------- | ------- |
-| grid positions only | Pitch ratio from circular constraint; diameter from grid extent | `'normalised'` |
+| grid positions only | Pitch from nearest-neighbour step analysis; diameter from grid extent | `'normalised'` |
 | grid positions + die size | Diameter from grid extent × pitch | `'mm'` |
 | grid positions + wafer diameter | Die size from `diameter / grid_extent` | `'mm'` |
 | grid positions + die size + diameter | Nothing — fully specified | `'mm'` |
 
-**Circular constraint** (used when no die size is given):
-since both axes span the same physical wafer diameter,
-`pitchY / pitchX = x_range / y_range`.
-If the grid spans 28 steps in X and 14 in Y, dies must be twice as tall as wide.
+**Diameter snapping:** inferred diameters snap to industry-standard sizes.
+100 mm, 150 mm, 200 mm, and 300 mm are preferred (±10% tolerance); other SEMI
+standard sizes (25 / 50 / 75 / 450 mm) are tried next (±20%); remaining values
+are rounded to the nearest 10 mm.
+
+**Origin auto-detection:** when all input coordinates are ≥ 0, the library
+automatically infers lower-left (`'LL'`) origin and centres the grid for display.
 
 ### Examples
 
@@ -182,23 +237,56 @@ const result = buildWaferMap({
 // result.units === 'mm'
 ```
 
-**Fully specified:**
+**Fully specified with notch:**
 
 ```ts
 const result = buildWaferMap({
   data,
-  wafer: { diameter: 300, flat: { type: 'bottom', length: 40 }, orientation: 90 },
+  wafer: { diameter: 300, notch: { type: 'bottom' }, orientation: 90 },
   die:   { width: 10, height: 10 },
 });
 ```
 
-**With bin data:**
+**With bin data and edge exclusion:**
 
 ```ts
 const result = buildWaferMap({
   data: csvRows.map(r => ({ x: Number(r.x), y: Number(r.y), bin: Number(r.hbin) })),
-  wafer: { diameter: 200 },
+  wafer: { diameter: 200, edgeExclusion: 3 },
   die:   { width: 8, height: 8 },
+});
+```
+
+**Reticle overlay phased to die (2, 1):**
+
+```ts
+const result = buildWaferMap({
+  data,
+  die:     { width: 10, height: 10 },
+  reticle: { width: 4, height: 2, anchor: { x: 2, y: 1 } },
+});
+```
+
+**Multi-wafer stack — count bin 2 failures across six wafers:**
+
+```ts
+const result = buildWaferMap({
+  wafer: { diameter: 300 },
+  die:   { width: 10, height: 10 },
+  stack: {
+    data:      [wafer1, wafer2, wafer3, wafer4, wafer5, wafer6],
+    aggr:      'count_bin',
+    targetBin: 2,
+  },
+});
+```
+
+**Row-based prober (y increases downward, origin at upper-left):**
+
+```ts
+const result = buildWaferMap({
+  data,
+  die: { width: 10, height: 10, origin: { type: 'UL' } },
 });
 ```
 
@@ -249,10 +337,11 @@ Converts a scene into Plotly-compatible `{ data, layout }`.
 
 ```ts
 interface ToPlotlyOptions {
-  showAxes?:   boolean
-  showUnits?:  boolean
-  diePitch?:   { x: number; y: number }
-  axisLabels?: { x?: string; y?: string }
+  showAxes?:    boolean
+  showUnits?:   boolean
+  showColorbar?: boolean   // default true; set false to suppress the colorbar
+  diePitch?:    { x: number; y: number }
+  axisLabels?:  { x?: string; y?: string }
 }
 ```
 
@@ -262,7 +351,7 @@ Behaviour:
 - Overlays → `layout.shapes` paths at `layer: 'above'`
 - Hover → invisible scatter trace (one point per die, indexed parallel to `scene.sourceDies`)
 - Text labels → scatter text trace (when `scene.texts.length > 0`)
-- Continuous modes (`value`, `softbin`, `stacked_values`) → reference colorbar trace
+- Continuous modes (`value`, `softbin`, `stacked_values`) → reference colorbar trace (suppressed when `showColorbar: false`)
 
 ---
 
@@ -277,9 +366,9 @@ import { buildWaferMap, toPlotly } from 'wafermap';
 Or from subpath exports:
 
 ```ts
-import { buildWaferMap }            from 'wafermap/renderer';
+import { buildWaferMap }             from 'wafermap/renderer';
 import { createWafer, generateDies } from 'wafermap/core';
-import { toPlotly }                 from 'wafermap/plotly-adapter';
+import { toPlotly }                  from 'wafermap/plotly-adapter';
 ```
 
 ---
@@ -319,13 +408,14 @@ Creates a wafer model.  `diameter` is required.
 {
   diameter:     number
   center?:      { x: number; y: number }   // mm, default {0, 0}
-  flat?:        { type: 'top' | 'bottom' | 'left' | 'right'; length: number }
+  notch?:       { type: 'top' | 'bottom' | 'left' | 'right' }
+                // Standard length derived from diameter automatically
   orientation?: number                     // degrees, default 0
   metadata?:    WaferMetadata
 }
 ```
 
-Returns `Wafer` with `diameter`, `radius`, `center`, `flat`, `orientation`, `metadata`.
+Returns `Wafer` with `diameter`, `radius`, `center`, `notch` (with computed `length`), `orientation`, `metadata`.
 
 ---
 
@@ -348,11 +438,18 @@ Returns `Die[]` with `id`, `i`, `j`, `x`, `y`, `width`, `height`.
 
 ### `clipDiesToWafer(dies, wafer, dieConfig?)`
 
-Clips dies to the wafer boundary.
+Clips dies to the wafer boundary (circle + optional notch/flat exclusion zone).
 
 - Removes dies entirely outside the wafer.
 - Sets `insideWafer: true` on included dies.
 - Sets `partial: true` on dies that straddle the boundary (requires `dieConfig` for 4-corner test).
+
+---
+
+### `isInsideWafer(x, y, wafer)`
+
+Returns `true` when the point (x, y) falls inside the wafer boundary including
+the notch/flat exclusion zone.  Coordinates are wafer-local (pre-rotation).
 
 ---
 
@@ -402,19 +499,24 @@ Supported strategies: `'row'`, `'column'`, `'snake'`, `'custom'`
 
 ### `generateReticleGrid(wafer, config)`
 
-Generates reticle rectangles covering the wafer area.
+Generates reticle rectangles covering the wafer area.  Reticles are rectangular
+groups of dies; positions are computed in die-index space so edges always land
+exactly on die boundaries.
 
 ```ts
 {
-  width:   number
-  height:  number
-  stepX:   number
-  stepY:   number
-  offset?: { x: number; y: number }
+  width:   number                      // field width in die counts
+  height:  number                      // field height in die counts
+  pitchX:  number                      // die pitch in display units (mm or normalised)
+  pitchY:  number
+  anchor?: { x: number; y: number }   // die index at the field's (0,0) corner; default {0,0}
 }
 ```
 
-Returns `Reticle[]`.
+`anchor` controls the phase of the reticle grid.  Die `(anchor.x, anchor.y)` sits
+at the bottom-left corner of a reticle field.
+
+Returns `Reticle[]` — display-coordinate rectangles ready for `buildScene`.
 
 ---
 
@@ -486,6 +588,8 @@ const scene = buildScene(wafer, aggregated, [], {
 });
 ```
 
+For inline multi-wafer aggregation, prefer the `stack` option on `buildWaferMap`.
+
 ---
 
 ### `buildScene(wafer, dies, reticles?, options?)`
@@ -547,25 +651,26 @@ Returns `Scene`:
 
 ```ts
 {
-  id:          string
-  i:           number    // die grid X position (equals input x for centred grids)
-  j:           number    // die grid Y position (equals input y for centred grids)
-  x:           number    // physical X in mm (or normalised units)
-  y:           number    // physical Y in mm (or normalised units)
-  width:       number    // die width in mm (or normalised units)
-  height:      number    // die height in mm (or normalised units)
-  values?:     number[]
-  bins?:       number[]
-  metadata?:   DieMetadata
-  insideWafer?: boolean
-  partial?:    boolean
-  probeIndex?: number
+  id:            string
+  i:             number    // die grid X position (equals input x for centred grids)
+  j:             number    // die grid Y position (equals input y for centred grids)
+  x:             number    // physical X in mm (or normalised units)
+  y:             number    // physical Y in mm (or normalised units)
+  width:         number    // die width in mm (or normalised units)
+  height:        number    // die height in mm (or normalised units)
+  values?:       number[]
+  bins?:         number[]
+  metadata?:     DieMetadata
+  insideWafer?:  boolean
+  partial?:      boolean   // straddles the wafer boundary
+  edgeExcluded?: boolean   // centre falls within the edge exclusion zone
+  probeIndex?:   number
 }
 ```
 
 `die.i` and `die.j` are the integer grid indices.  For grids centred at (0,0)
 (the common case), they equal the original prober step positions passed as input.
-Use them for post-enrichment lookups: `rowMap.get(`${die.i},${die.j}`)`.
+Use them for post-enrichment lookups: `` rowMap.get(`${die.i},${die.j}`) ``.
 
 `die.x` and `die.y` are the physical positions derived by the library.  Their unit
 depends on `WaferMapResult.units`.
@@ -574,25 +679,34 @@ depends on `WaferMapResult.units`.
 
 ```ts
 {
-  diameter:     number
-  radius:       number
-  center:       { x: number; y: number }
-  flat?:        WaferFlat
-  orientation:  number
-  metadata?:    WaferMetadata
+  diameter:    number
+  radius:      number
+  center:      { x: number; y: number }
+  notch?:      { type: 'top' | 'bottom' | 'left' | 'right'; length: number }
+               // length = standard chord/half-width in mm, derived from diameter
+  orientation: number
+  metadata?:   WaferMetadata
+}
+```
+
+### `WaferNotch`
+
+User-facing input type — `length` is derived automatically from the wafer diameter
+by `createWafer` and does not need to be supplied.
+
+```ts
+{
+  type: 'top' | 'bottom' | 'left' | 'right'
 }
 ```
 
 ### `WaferMetadata`
 
+An open key-value record — any fields are accepted.  No fixed schema is enforced.
+
 ```ts
-{
-  lot:          string
-  waferNumber:  number
-  testDate:     string
-  testProgram:  string
-  temperature:  number
-}
+type WaferMetadata = Record<string, unknown>
+// e.g. { lot: 'LOT123', waferNumber: 1, testDate: '2026-04-23', temperature: 25 }
 ```
 
 ### `DieMetadata`
@@ -624,5 +738,3 @@ depends on `WaferMapResult.units`.
 
 - Ring segmentation uses equal-width radial bands.  Configurable breakpoints are planned.
 - Plotly types are not exposed as formal peer-typed interfaces.
-- `aggregateDieValues` helper (mean / median collapse across `die.values[]`) is not yet implemented.
-- `bin_count` plot mode (colour by how many stacked bins match a target) is not yet implemented.

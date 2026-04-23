@@ -247,7 +247,7 @@ import {
 
 const wafer = createWafer({
   diameter: 300,
-  flat: { type: 'bottom', length: 40 },
+  notch: { type: 'bottom' },
   orientation: 0,
   metadata: {
     lot: 'LOT-42',

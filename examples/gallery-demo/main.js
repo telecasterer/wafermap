@@ -37,7 +37,7 @@ async function main() {
       data,
       wafer: {
         diameter: 150,
-        flat: { type: 'bottom', length: 30 },
+        notch: { type: 'bottom' },
         orientation: 0,
         metadata: {
           lot: firstRow.lot ?? 'LOT456',

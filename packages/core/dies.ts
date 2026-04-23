@@ -20,8 +20,9 @@ export interface Die {
   bins?: number[];     // ordered bin assignments (index 0 = primary)
   metadata?: DieMetadata;
   insideWafer?: boolean;
-  partial?: boolean;   // true if die straddles the wafer boundary
-  probeIndex?: number; // assigned by applyProbeSequence
+  partial?: boolean;     // true if die straddles the wafer boundary
+  edgeExcluded?: boolean; // true if die centre falls within the edge exclusion zone
+  probeIndex?: number;   // assigned by applyProbeSequence
 }
 
 /**

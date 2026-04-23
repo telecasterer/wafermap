@@ -1,5 +1,7 @@
 const STANDARD_DIAMETERS = [25, 50, 75, 100, 150, 200, 300, 450];
-const PREFERRED_DIAMETERS = [200, 300];
+// Industry-standard sizes used in high-volume manufacturing today — snap to
+// these first with a tighter tolerance before trying the full standard list.
+const PREFERRED_DIAMETERS = [100, 150, 200, 300];
 
 export interface WaferInference {
   center: { x: number; y: number };

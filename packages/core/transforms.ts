@@ -36,24 +36,24 @@ export function rotatePoint(
   return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos };
 }
 
-/** Distance from wafer centre to flat chord: sqrt(r² − (L/2)²). */
-function flatChordDistance(radius: number, chordLength: number): number {
+/** Perpendicular distance from wafer centre to notch/flat chord: sqrt(r² − (L/2)²). */
+function alignmentChordDistance(radius: number, chordLength: number): number {
   return Math.sqrt(radius * radius - (chordLength / 2) ** 2);
 }
 
 /**
  * Check whether (x, y) — in wafer-local (pre-rotation) coordinates —
- * lies inside the wafer boundary, including the flat.
+ * lies inside the wafer boundary, including the notch/flat exclusion zone.
  */
-export function isInsideWaferWithFlat(x: number, y: number, wafer: Wafer): boolean {
+export function isInsideWafer(x: number, y: number, wafer: Wafer): boolean {
   const dx = x - wafer.center.x, dy = y - wafer.center.y;
   if (dx * dx + dy * dy > wafer.radius * wafer.radius) return false;
-  if (wafer.flat) {
-    const d = flatChordDistance(wafer.radius, wafer.flat.length);
-    if (wafer.flat.type === 'bottom' && dy < -d) return false;
-    if (wafer.flat.type === 'top'    && dy >  d) return false;
-    if (wafer.flat.type === 'left'   && dx < -d) return false;
-    if (wafer.flat.type === 'right'  && dx >  d) return false;
+  if (wafer.notch) {
+    const d = alignmentChordDistance(wafer.radius, wafer.notch.length);
+    if (wafer.notch.type === 'bottom' && dy < -d) return false;
+    if (wafer.notch.type === 'top'    && dy >  d) return false;
+    if (wafer.notch.type === 'left'   && dx < -d) return false;
+    if (wafer.notch.type === 'right'  && dx >  d) return false;
   }
   return true;
 }
@@ -61,14 +61,14 @@ export function isInsideWaferWithFlat(x: number, y: number, wafer: Wafer): boole
 // ── Pipeline transforms ───────────────────────────────────────────────────────
 
 /**
- * Clip dies to the wafer boundary (circle + optional flat).
+ * Clip dies to the wafer boundary (circle + optional notch/flat).
  * When dieConfig is supplied, all four corners are checked to detect partial dies.
  * Operates on wafer-local coordinates (before applyOrientation).
  */
 export function clipDiesToWafer(dies: Die[], wafer: Wafer, dieConfig?: DieConfig): Die[] {
   const result: Die[] = [];
   for (const die of dies) {
-    const centerIn = isInsideWaferWithFlat(die.x, die.y, wafer);
+    const centerIn = isInsideWafer(die.x, die.y, wafer);
     if (!dieConfig) {
       if (centerIn) result.push({ ...die, insideWafer: true, partial: false });
       continue;
@@ -78,7 +78,7 @@ export function clipDiesToWafer(dies: Die[], wafer: Wafer, dieConfig?: DieConfig
       [die.x - hw, die.y - hh], [die.x + hw, die.y - hh],
       [die.x + hw, die.y + hh], [die.x - hw, die.y + hh],
     ];
-    const cornersIn = corners.filter(([cx, cy]) => isInsideWaferWithFlat(cx, cy, wafer)).length;
+    const cornersIn = corners.filter(([cx, cy]) => isInsideWafer(cx, cy, wafer)).length;
     if (!centerIn && cornersIn === 0) continue;
     result.push({ ...die, insideWafer: true, partial: cornersIn < 4 });
   }

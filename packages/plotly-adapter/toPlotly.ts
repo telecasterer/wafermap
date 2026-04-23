@@ -18,6 +18,11 @@ export interface ToPlotlyOptions {
   diePitch?: { x: number; y: number };
   /** Override axis title text. Defaults to "X" / "Y" (or "Die X" / "Die Y" with diePitch). */
   axisLabels?: { x?: string; y?: string };
+  /**
+   * Show the continuous colorbar for value / softbin / stacked_values modes.
+   * Default `true`.  Set to `false` for minimal or embedded layouts.
+   */
+  showColorbar?: boolean;
 }
 
 /**
@@ -41,7 +46,7 @@ function diePitchTicks(pitch: number): { tickvals: number[]; ticktext: string[] 
 }
 
 export function toPlotly(scene: Scene, options: ToPlotlyOptions = {}): PlotlyOutput {
-  const { showAxes = false, showUnits = false, diePitch, axisLabels = {} } = options;
+  const { showAxes = false, showUnits = false, diePitch, axisLabels = {}, showColorbar = true } = options;
   const useIndexTicks = showAxes && !!diePitch && !showUnits;
   const unitSuffix = showUnits ? ' (mm)' : '';
   const defaultXLabel = diePitch && !showUnits ? 'Die X' : 'X';
@@ -92,7 +97,7 @@ export function toPlotly(scene: Scene, options: ToPlotlyOptions = {}): PlotlyOut
     });
   }
 
-  if (plotMode === 'value' || plotMode === 'softbin' || plotMode === 'stacked_values') {
+  if (showColorbar && (plotMode === 'value' || plotMode === 'softbin' || plotMode === 'stacked_values')) {
     const colorscale = getColorScheme(colorScheme).plotlyColorscale;
     const [cmin, cmax] = valueRange ?? [0, 1];
     traces.push({

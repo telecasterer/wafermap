@@ -84,7 +84,7 @@ const baseResult = buildWaferMap({
   data: rawData,
   wafer: {
     diameter: 300,
-    flat: { type: 'bottom', length: 40 },
+    notch: { type: 'bottom' },
     metadata: waferMeta,
   },
   die: { width: 10, height: 10 },

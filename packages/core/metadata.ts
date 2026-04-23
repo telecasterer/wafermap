@@ -8,11 +8,4 @@ export interface DieMetadata {
   customFields?: Record<string, unknown>;
 }
 
-export interface WaferMetadata {
-  lot: string;
-  waferNumber: number;
-  testDate: string;
-  testProgram: string;
-  temperature: number;
-  [key: string]: unknown;
-}
+export type WaferMetadata = Record<string, unknown>;
