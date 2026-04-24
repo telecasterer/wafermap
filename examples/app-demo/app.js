@@ -264,9 +264,19 @@ function renderYieldChart() {
   });
 }
 
-// ── Wafermap gallery ──────────────────────────────────────────────────────────
+// ── Render queue — debounced, cancellable progressive rendering ───────────────
+
+const renderQueue = { token: 0, timer: null };
 
 function refreshGallery() {
+  // Debounce: cancel any pending timer and increment the cancellation token
+  // to abort any in-progress rAF render loop.
+  clearTimeout(renderQueue.timer);
+  renderQueue.token++;
+  renderQueue.timer = setTimeout(_doRefreshGallery, 150);
+}
+
+function _doRefreshGallery() {
   const { view } = state.ui;
   document.getElementById('btn-view-maps').classList.toggle('active', view === 'maps');
   document.getElementById('btn-view-bingallery').classList.toggle('active', view === 'bingallery');
@@ -314,22 +324,35 @@ function renderWafermapGallery() {
       })
     : dies => dies;
 
-  for (const waferId of selected) {
+  // Render one wafer per animation frame so the browser stays responsive.
+  // Capture the token at the start; if it changes, a newer render has started
+  // and this loop should stop.
+  const token = renderQueue.token;
+  let i = 0;
+
+  function renderNext() {
+    if (renderQueue.token !== token) return; // cancelled
+    if (i >= selected.length) return;
+
+    const waferId = selected[i++];
     const dies = diesByWafer[waferId];
-    if (!dies) continue;
+    if (dies) {
+      const scene = buildScene(wafer, dies4map(dies), {
+        plotMode, colorScheme,
+        showRingBoundaries:     showRings,
+        showQuadrantBoundaries: showQuadrants,
+        showXYIndicator:        showXY,
+        highlightBin,
+      });
+      const { data, layout } = toPlotly(scene);
+      Plotly.react(`map-${waferId}`, data, { ...layout, margin: { t: 6, l: 6, r: 44, b: 6 } }, { responsive: true });
+      renderMapStats(`mapstats-${waferId}`, dies);
+    }
 
-    const scene = buildScene(wafer, dies4map(dies), {
-      plotMode, colorScheme,
-      showRingBoundaries:     showRings,
-      showQuadrantBoundaries: showQuadrants,
-      showXYIndicator:        showXY,
-      highlightBin,
-    });
-
-    const { data, layout } = toPlotly(scene);
-    Plotly.react(`map-${waferId}`, data, { ...layout, margin: { t: 6, l: 6, r: 44, b: 6 } }, { responsive: true });
-    renderMapStats(`mapstats-${waferId}`, dies);
+    requestAnimationFrame(renderNext);
   }
+
+  requestAnimationFrame(renderNext);
 }
 
 function renderMapStats(targetId, dies) {
@@ -367,7 +390,14 @@ function renderBinGallery() {
     </div>
   `).join('');
 
-  for (const bin of uniqueBins) {
+  const token = renderQueue.token;
+  let i = 0;
+
+  function renderNext() {
+    if (renderQueue.token !== token) return;
+    if (i >= uniqueBins.length) return;
+
+    const bin        = uniqueBins[i++];
     const aggregated = aggregateBinCounts(allWaferDies, bin);
     const totalHits  = aggregated.reduce((s, d) => s + (d.values?.[0] ?? 0), 0);
     const affected   = aggregated.filter(d => (d.values?.[0] ?? 0) > 0).length;
@@ -382,11 +412,15 @@ function renderBinGallery() {
 
     const subEl   = document.getElementById(`binsub-${bin}`);
     const statsEl = document.getElementById(`mapstats-bin-${bin}`);
-    if (subEl)   subEl.textContent   = `${affected} positions`;
-    if (statsEl) statsEl.innerHTML   =
+    if (subEl)   subEl.textContent = `${affected} positions`;
+    if (statsEl) statsEl.innerHTML =
       `<span class="stat-chip">Total: ${totalHits} occurrences across ${numWafers} wafers</span>` +
       `<span class="stat-chip">Scale: 0 – ${numWafers}</span>`;
+
+    requestAnimationFrame(renderNext);
   }
+
+  requestAnimationFrame(renderNext);
 }
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
