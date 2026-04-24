@@ -33,8 +33,8 @@ document.querySelector('#app').innerHTML = `
           <option value="value">Value</option>
           <option value="hardbin">Hard Bin</option>
           <option value="softbin">Soft Bin</option>
-          <option value="stacked_values">Stacked Values</option>
-          <option value="stacked_bins">Stacked Bins</option>
+          <option value="stackedValues">Stacked Values</option>
+          <option value="stackedBins">Stacked Bins</option>
         </select>
       </label>
 
@@ -76,18 +76,18 @@ for (let y = -15; y <= 15; y++) {
     if (Math.sqrt(x * x + y * y) > 15) continue;
     const r     = Math.sqrt(x * x + y * y);
     const value = Math.max(0.05, 0.97 - r * 0.055 + Math.sin(x * 0.8 + y * 0.5) * 0.03);
-    rawData.push({ x, y, value });
+    rawData.push({ x, y, values: [value] });
   }
 }
 
 const baseResult = buildWaferMap({
-  data: rawData,
-  wafer: {
+  results: rawData,
+  waferConfig: {
     diameter: 300,
     notch: { type: 'bottom' },
     metadata: waferMeta,
   },
-  die: { width: 10, height: 10 },
+  dieConfig: { width: 10, height: 10 },
 });
 
 // Post-enrich with multiple values and bins so stacked modes work.
@@ -97,7 +97,7 @@ const rawMap = new Map(rawData.map(d => [`${d.x},${d.y}`, d]));
 const enrichedDies = baseResult.dies.map(die => {
   const src = rawMap.get(`${die.i},${die.j}`);
   if (!src) return die;
-  const v = src.value;
+  const v = src.values[0];
   return {
     ...die,
     values: [v, Math.max(0.05, v - 0.08), Math.max(0.05, v - 0.14)],
@@ -120,7 +120,7 @@ const state = {
 };
 
 function render() {
-  const scene = buildScene(baseResult.wafer, enrichedDies, [], {
+  const scene = buildScene(baseResult.wafer, enrichedDies, {
     plotMode: state.plotMode,
     showText: state.showText,
     showRingBoundaries: state.showRingBoundaries,

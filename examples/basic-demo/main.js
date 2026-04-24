@@ -91,7 +91,7 @@ function loadWafer(waferId) {
 
   appState.wafer = wafer;
   appState.baseDies = oriented;
-  appState.reticles = generateReticleGrid(wafer, { width: 3, height: 3, pitchX: DIE_SIZE.width, pitchY: DIE_SIZE.height });
+  appState.reticles = generateReticleGrid(wafer, { width: 3, height: 3, diePitchX: DIE_SIZE.width, diePitchY: DIE_SIZE.height });
 
   updateMetaPanel(waferMeta);
   redraw();
@@ -150,7 +150,8 @@ function redraw() {
         return { ...die, values: reordered };
       });
 
-  const scene = buildScene(appState.wafer, diesForScene, appState.reticles, {
+  const scene = buildScene(appState.wafer, diesForScene, {
+    reticles: appState.reticles,
     plotMode: appState.plotMode,
     showText: appState.showText,
     showReticle: appState.showReticle,

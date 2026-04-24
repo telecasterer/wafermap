@@ -27,14 +27,14 @@ async function main() {
   const firstRow = W01rows[0] ?? {};
 
   const templateData = W01rows.map(r => ({
-    x:   Number(r.x),
-    y:   Number(r.y),
-    bin: Number(r.hbin),
+    x:    Number(r.x),
+    y:    Number(r.y),
+    bins: [Number(r.hbin)],
   }));
 
   const template = buildWaferMap({
-    data: templateData,
-    wafer: {
+    results: templateData,
+    waferConfig: {
       diameter: WAFER_DIAMETER,
       notch: { type: 'bottom' },
       orientation: 0,
@@ -46,7 +46,7 @@ async function main() {
         temperature: Number(firstRow.temp ?? 25),
       },
     },
-    die: { width: PITCH, height: PITCH },
+    dieConfig: { width: PITCH, height: PITCH },
   });
 
   state.wafer = template.wafer;
@@ -107,7 +107,7 @@ function renderAll() {
     const totalOccurrences   = aggregated.reduce((sum, d) => sum + (d.values?.[0] ?? 0), 0);
     const affectedPositions  = aggregated.filter(d => (d.values?.[0] ?? 0) > 0).length;
 
-    const scene = buildScene(state.wafer, aggregated, [], {
+    const scene = buildScene(state.wafer, aggregated, {
       plotMode:           'value',
       valueRange:         [0, numWafers],
       colorScheme:        state.colorScheme,

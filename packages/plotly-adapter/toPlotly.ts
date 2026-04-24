@@ -9,17 +9,17 @@ export interface PlotlyOutput {
 export interface ToPlotlyOptions {
   showAxes?: boolean;
   /** Show "(mm)" unit suffix on axis titles and display raw mm tick values. Default false. */
-  showUnits?: boolean;
+  showPhysicalUnits?: boolean;
   /**
-   * Die pitch in mm. When provided and showUnits is false, axis ticks show die grid
+   * Die pitch in mm. When provided and showPhysicalUnits is false, axis ticks show die grid
    * indices (integers) instead of mm coordinates. Pass the same width/height used in
    * generateDies().
    */
-  diePitch?: { x: number; y: number };
-  /** Override axis title text. Defaults to "X" / "Y" (or "Die X" / "Die Y" with diePitch). */
+  diePitchMm?: { x: number; y: number };
+  /** Override axis title text. Defaults to "X" / "Y" (or "Die X" / "Die Y" with diePitchMm). */
   axisLabels?: { x?: string; y?: string };
   /**
-   * Show the continuous colorbar for value / softbin / stacked_values modes.
+   * Show the continuous colorbar for value / softbin / stackedValues modes.
    * Default `true`.  Set to `false` for minimal or embedded layouts.
    */
   showColorbar?: boolean;
@@ -46,11 +46,11 @@ function diePitchTicks(pitch: number): { tickvals: number[]; ticktext: string[] 
 }
 
 export function toPlotly(scene: Scene, options: ToPlotlyOptions = {}): PlotlyOutput {
-  const { showAxes = false, showUnits = false, diePitch, axisLabels = {}, showColorbar = true } = options;
-  const useIndexTicks = showAxes && !!diePitch && !showUnits;
-  const unitSuffix = showUnits ? ' (mm)' : '';
-  const defaultXLabel = diePitch && !showUnits ? 'Die X' : 'X';
-  const defaultYLabel = diePitch && !showUnits ? 'Die Y' : 'Y';
+  const { showAxes = false, showPhysicalUnits = false, diePitchMm, axisLabels = {}, showColorbar = true } = options;
+  const useIndexTicks = showAxes && !!diePitchMm && !showPhysicalUnits;
+  const unitSuffix = showPhysicalUnits ? ' (mm)' : '';
+  const defaultXLabel = diePitchMm && !showPhysicalUnits ? 'Die X' : 'X';
+  const defaultYLabel = diePitchMm && !showPhysicalUnits ? 'Die Y' : 'Y';
   const xLabel = (axisLabels.x ?? defaultXLabel) + unitSuffix;
   const yLabel = (axisLabels.y ?? defaultYLabel) + unitSuffix;
   const { rectangles, hoverPoints, texts, overlays, plotMode, colorScheme, valueRange } = scene;
@@ -97,7 +97,7 @@ export function toPlotly(scene: Scene, options: ToPlotlyOptions = {}): PlotlyOut
     });
   }
 
-  if (showColorbar && (plotMode === 'value' || plotMode === 'softbin' || plotMode === 'stacked_values')) {
+  if (showColorbar && (plotMode === 'value' || plotMode === 'softbin' || plotMode === 'stackedValues')) {
     const colorscale = getColorScheme(colorScheme).plotlyColorscale;
     const [cmin, cmax] = valueRange ?? [0, 1];
     traces.push({
@@ -118,7 +118,7 @@ export function toPlotly(scene: Scene, options: ToPlotlyOptions = {}): PlotlyOut
   if (showAxes) {
     xaxis['title'] = { text: xLabel };
     if (useIndexTicks) {
-      const { tickvals, ticktext } = diePitchTicks(diePitch!.x);
+      const { tickvals, ticktext } = diePitchTicks(diePitchMm!.x);
       xaxis['tickvals'] = tickvals;
       xaxis['ticktext'] = ticktext;
     }
@@ -130,7 +130,7 @@ export function toPlotly(scene: Scene, options: ToPlotlyOptions = {}): PlotlyOut
   if (showAxes) {
     yaxis['title'] = { text: yLabel };
     if (useIndexTicks) {
-      const { tickvals, ticktext } = diePitchTicks(diePitch!.y);
+      const { tickvals, ticktext } = diePitchTicks(diePitchMm!.y);
       yaxis['tickvals'] = tickvals;
       yaxis['ticktext'] = ticktext;
     }

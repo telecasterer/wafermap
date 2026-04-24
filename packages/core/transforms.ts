@@ -1,5 +1,5 @@
 import type { Wafer } from './wafer.js';
-import type { Die, DieConfig } from './dies.js';
+import type { Die, DieSpec } from './dies.js';
 
 export interface DataRow {
   [key: string]: string | number;
@@ -65,7 +65,7 @@ export function isInsideWafer(x: number, y: number, wafer: Wafer): boolean {
  * When dieConfig is supplied, all four corners are checked to detect partial dies.
  * Operates on wafer-local coordinates (before applyOrientation).
  */
-export function clipDiesToWafer(dies: Die[], wafer: Wafer, dieConfig?: DieConfig): Die[] {
+export function clipDiesToWafer(dies: Die[], wafer: Wafer, dieConfig?: DieSpec): Die[] {
   const result: Die[] = [];
   for (const die of dies) {
     const centerIn = isInsideWafer(die.x, die.y, wafer);

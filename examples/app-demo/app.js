@@ -101,13 +101,13 @@ function processData() {
 
     // x,y columns contain prober step positions (die grid indices, not mm).
     const data = waferRows.map(r => ({
-      x:   Number(r[cfg.xCol]),
-      y:   Number(r[cfg.yCol]),
-      bin: cfg.hbinCol ? Number(r[cfg.hbinCol]) : undefined,
-      value: cfg.valueCols[0] ? Number(r[cfg.valueCols[0]]) : undefined,
+      x:    Number(r[cfg.xCol]),
+      y:    Number(r[cfg.yCol]),
+      bins:   cfg.hbinCol      ? [Number(r[cfg.hbinCol])]                           : undefined,
+      values: cfg.valueCols[0] ? [Number(r[cfg.valueCols[0]])]                      : undefined,
     }));
 
-    const result = buildWaferMap({ data });
+    const result = buildWaferMap({ results: data });
 
     // Post-enrich with additional channels — die.i === prober x for centred grids.
     const rowMap = new Map(waferRows.map(r => [`${r[cfg.xCol]},${r[cfg.yCol]}`, r]));
@@ -296,7 +296,7 @@ function renderWafermapGallery() {
     const dies = diesByWafer[waferId];
     if (!dies) continue;
 
-    const scene = buildScene(wafer, dies4map(dies), [], {
+    const scene = buildScene(wafer, dies4map(dies), {
       plotMode, colorScheme,
       showRingBoundaries:     showRings,
       showQuadrantBoundaries: showQuadrants,
@@ -350,7 +350,7 @@ function renderBinGallery() {
     const totalHits  = aggregated.reduce((s, d) => s + (d.values?.[0] ?? 0), 0);
     const affected   = aggregated.filter(d => (d.values?.[0] ?? 0) > 0).length;
 
-    const scene = buildScene(wafer, aggregated, [], {
+    const scene = buildScene(wafer, aggregated, {
       plotMode: 'value', valueRange: [0, numWafers],
       colorScheme, showRingBoundaries: showRings,
     });
@@ -435,8 +435,8 @@ function populateMapControls() {
     <option value="hardbin">Hard Bin</option>
     <option value="softbin">Soft Bin</option>
     <option value="value">Test Value</option>
-    <option value="stacked_values">Stacked Values</option>
-    <option value="stacked_bins">Stacked Bins</option>
+    <option value="stackedValues">Stacked Values</option>
+    <option value="stackedBins">Stacked Bins</option>
   `;
 
   const chanEl = document.getElementById('map-channel');

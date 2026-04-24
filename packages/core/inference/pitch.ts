@@ -1,9 +1,9 @@
 export interface PitchResult {
   pitchX: number;
   pitchY: number;
-  /** 'mm' when at least one physical dimension is known; 'normalised' when
+  /** 'mm' when at least one physical dimension is known; 'normalized' when
    *  dimensions are estimated solely from the circular grid constraint. */
-  units: 'mm' | 'normalised';
+  units: 'mm' | 'normalized';
   confidence: number;
 }
 
@@ -122,7 +122,7 @@ export function resolveGridPitch(
     return {
       pitchX: fallback,
       pitchY: fallback,
-      units: hasWidth || hasHeight || waferDiameter !== undefined ? 'mm' : 'normalised',
+      units: hasWidth || hasHeight || waferDiameter !== undefined ? 'mm' : 'normalized',
       confidence: 0,
     };
   }
@@ -166,7 +166,7 @@ export function resolveGridPitch(
     return {
       pitchX: 1,
       pitchY: nn.pitchY / scale,
-      units: 'normalised',
+      units: 'normalized',
       confidence: 0.5,
     };
   }
@@ -176,7 +176,7 @@ export function resolveGridPitch(
   return {
     pitchX: 1,
     pitchY: xRange / yRange,
-    units: 'normalised',
+    units: 'normalized',
     confidence: 0.4,
   };
 }

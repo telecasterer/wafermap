@@ -14,7 +14,7 @@ export interface WaferNotch {
   type: 'top' | 'bottom' | 'left' | 'right';
 }
 
-export interface WaferConfig {
+export interface WaferSpec {
   diameter: number;
   center?: { x: number; y: number };
   notch?: WaferNotch;
@@ -42,8 +42,8 @@ function standardNotchLength(diameter: number): number {
   return 1.75;                       // SEMI M1 V-notch half-width at surface
 }
 
-/** Create a wafer model from config. Defaults: center={0,0}, orientation=0. */
-export function createWafer(config: WaferConfig): Wafer {
+/** Create a wafer model from spec. Defaults: center={0,0}, orientation=0. */
+export function createWafer(config: WaferSpec): Wafer {
   return {
     diameter:    config.diameter,
     radius:      config.diameter / 2,

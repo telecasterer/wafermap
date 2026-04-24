@@ -33,7 +33,7 @@ function enrichDies(dies) {
 test('core geometry pipeline produces clipped dies with expected metadata hooks', () => {
   const wafer = createWafer({
     diameter: 40,
-    flat: { type: 'bottom', length: 10 },
+    notch: { type: 'bottom' },
     metadata: {
       lot: 'LOT-001',
       waferNumber: 1,
@@ -113,16 +113,17 @@ test('renderer builds scene rectangles, overlays, and text for stacked modes', (
     { width: 10, height: 10 }
   );
   const dies = enrichDies(clipped);
-  const reticles = generateReticleGrid(wafer, { width: 20, height: 20, stepX: 20, stepY: 20 });
+  const reticles = generateReticleGrid(wafer, { width: 2, height: 2, diePitchX: 10, diePitchY: 10 });
 
-  const scene = buildScene(wafer, dies, reticles, {
-    plotMode: 'stacked_bins',
+  const scene = buildScene(wafer, dies, {
+    plotMode: 'stackedBins',
     showText: true,
     showReticle: true,
     showProbePath: true,
     showRingBoundaries: true,
     showQuadrantBoundaries: true,
     ringCount: 4,
+    reticles,
   });
 
   assert.equal(scene.metadata.lot, 'LOT-001');
@@ -144,7 +145,7 @@ test('plotly adapter converts a scene into path shapes and traces', () => {
       { width: 10, height: 10 }
     )
   );
-  const scene = buildScene(wafer, dies, [], {
+  const scene = buildScene(wafer, dies, {
     plotMode: 'value',
     showText: true,
   });

@@ -1,7 +1,7 @@
-import type { Die } from '../core/dies.js';
+import type { Die, DieSpec } from '../core/dies.js';
 import type { WaferMetadata } from '../core/metadata.js';
-import type { Wafer } from '../core/wafer.js';
-import type { Reticle } from '../core/reticle.js';
+import type { Wafer, WaferSpec } from '../core/wafer.js';
+import type { Reticle, ReticleSpec } from '../core/reticle.js';
 import { createWafer } from '../core/wafer.js';
 import { generateDies } from '../core/dies.js';
 import { clipDiesToWafer, applyOrientation, transformDies } from '../core/transforms.js';
@@ -9,26 +9,33 @@ import { inferWaferFromXY } from '../core/inference/wafer.js';
 import { resolveGridPitch } from '../core/inference/pitch.js';
 import { assignGridIndices } from '../core/inference/grid.js';
 import { generateReticleGrid } from '../core/reticle.js';
-import { buildScene, type Scene, type BuildSceneOptions, type PlotMode } from './buildScene.js';
+import { buildScene, type Scene, type SceneOptions, type PlotMode } from './buildScene.js';
 
 // ── Public input types ────────────────────────────────────────────────────────
 
 /**
- * A single data point from wafer test equipment.
- * x and y are **die grid positions** (prober step coordinates) — integers
+ * Test result for a single die position, as output by the prober.
+ * `x` and `y` are **die grid positions** (prober step coordinates) — integers
  * such as −7, 0, 5.  They are NOT millimetre values.
  */
-export interface WaferMapPoint {
+export interface DieResult {
   /** Die grid X position (prober step coordinate). */
   x: number;
   /** Die grid Y position (prober step coordinate). */
   y: number;
-  value?: number;
-  bin?: number;
+  /** Measured test values — one per test channel. */
+  values?: number[];
+  /** Bin assignments — bins[0] is the hard bin, bins[1] the soft bin, etc. */
+  bins?: number[];
 }
 
+/** @deprecated Use {@link DieResult} */
+export type DieSample = DieResult;
+/** @deprecated Use {@link DieResult} */
+export type WaferMapPoint = DieResult;
+
 /** Wafer geometry parameters — all optional; any omitted fields are inferred. */
-export interface WaferOptions {
+export interface WaferConfig {
   /** Wafer diameter in mm.  Inferred from grid extent × pitch when omitted. */
   diameter?: number;
   /**
@@ -39,7 +46,14 @@ export interface WaferOptions {
    * - > 150 mm → V-notch (~3.5 mm wide, 1.25 mm deep — SEMI M1)
    */
   notch?: { type: 'top' | 'bottom' | 'left' | 'right' };
-  /** Degrees, default 0. */
+  /**
+   * Wafer orientation in degrees.  Positive values rotate the map
+   * counter-clockwise (standard mathematical convention).  The notch/flat
+   * position is set by `notch.type` and is not affected by this value —
+   * `orientation` rotates the *die grid* on the display.
+   *
+   * Common values: 0 (default), 90, 180, 270.
+   */
   orientation?: number;
   metadata?: WaferMetadata;
   /**
@@ -50,19 +64,24 @@ export interface WaferOptions {
   edgeExclusion?: number;
 }
 
+/** @deprecated Use {@link WaferConfig} */
+export type WaferOptions = WaferConfig;
+/** @deprecated Use {@link WaferConfig} */
+export type WaferParams = WaferConfig;
+
 /**
- * Die geometry parameters — all optional.
+ * Die geometry and coordinate-system parameters — all optional.
  * When omitted, dimensions are estimated from the grid layout.
  */
-export interface DieOptions {
+export interface DieConfig {
   /** Die width in mm (= X pitch). */
   width?: number;
   /** Die height in mm (= Y pitch). */
   height?: number;
   /**
-   * Grid origin convention used by the prober.
+   * Where the prober places coordinate (0,0) on the wafer grid.
    *
-   * - `'center'`  (default) — origin already near (0,0); centroid offset applied.
+   * - `'center'`  (default) — grid already near (0,0); centroid offset applied.
    * - `'LL'`      — (0,0) at lower-left; positive x right, positive y up.
    * - `'UL'`      — (0,0) at upper-left; positive x right, positive y **down**.
    * - `'LR'`      — (0,0) at lower-right; positive x **left**, positive y up.
@@ -71,9 +90,9 @@ export interface DieOptions {
    *
    * Auto-detected as `'LL'` when all input coordinates are ≥ 0 (standard STDF/KLA output).
    */
-  origin?: {
+  coordinateOrigin?: {
     type: 'center' | 'LL' | 'UL' | 'LR' | 'UR' | 'custom';
-    /** Grid-step offset to the true origin.  Used only when type is `'custom'`. */
+    /** Grid-step offset to the true centre.  Used only when type is `'custom'`. */
     offset?: { x: number; y: number };
   };
   /**
@@ -91,51 +110,92 @@ export interface DieOptions {
   xAxisDirection?: 'right' | 'left';
 }
 
+/** @deprecated Use {@link DieConfig} */
+export type DieOptions = DieConfig;
+/** @deprecated Use {@link DieConfig} */
+export type DieParams = DieConfig;
+
+/**
+ * Reticle (stepper field) overlay configuration.
+ * Dimensions are in die counts; `anchorDie` pins a specific die index to the
+ * reticle's internal (0,0) corner.
+ */
+export interface ReticleConfig {
+  /** Field width in number of dies. */
+  width: number;
+  /** Field height in number of dies. */
+  height: number;
+  /**
+   * Die grid index (i, j) that sits at the reticle field's internal (0,0) corner.
+   * Controls the phase (alignment) of the reticle grid.
+   * Defaults to `{x: 0, y: 0}`.
+   */
+  anchorDie?: { x: number; y: number };
+}
+
+/**
+ * Lot-level stacking — collapse results from several wafers into a single map.
+ * The aggregated result is used as the `results` for this map; any top-level
+ * `results` field is ignored when `lotStack` is present.
+ */
+export interface LotStackConfig {
+  /** One `DieResult[]` per wafer in the lot. */
+  results: DieResult[][];
+  /** Aggregation method applied per die position across all wafers. */
+  method: 'mean' | 'median' | 'stddev' | 'countBin' | 'mode' | 'percent';
+  /** Required when `method` is `'countBin'` or `'percent'`. */
+  targetBin?: number;
+}
+
 /** Input accepted by {@link buildWaferMap}.  All fields are optional. */
 export interface WaferMapInput {
-  data?: WaferMapPoint[];
-  wafer?: WaferOptions;
-  die?: DieOptions;
+  /** Per-die test results from the prober. */
+  results?: DieResult[];
+  /** Wafer geometry — diameter, notch direction, orientation, edge exclusion. */
+  waferConfig?: WaferConfig;
+  /** Die size and coordinate-system conventions. */
+  dieConfig?: DieConfig;
   /** Pre-built die array.  When supplied, geometry generation is skipped. */
   dies?: Die[];
   /**
-   * Reticle (stepper field) overlay.  Dimensions are in die counts; `anchor`
-   * pins a specific die index to the reticle's internal (0,0) corner.
+   * Reticle (stepper field) overlay.
    * When provided, `showReticle` defaults to `true` in the scene options.
    */
-  reticle?: {
-    /** Field width in number of dies. */
-    width: number;
-    /** Field height in number of dies. */
-    height: number;
-    /**
-     * Die index (i, j) that sits at the reticle field's internal (0,0) corner.
-     * Controls the phase (alignment) of the reticle grid.
-     * Defaults to `{x: 0, y: 0}`.
-     */
-    anchor?: { x: number; y: number };
-  };
+  reticleConfig?: ReticleConfig;
   /**
-   * Multi-wafer stacking — collapse data from several wafers into a single map.
-   * The aggregated result is used as the `data` for this map; any top-level
-   * `data` field is ignored when `stack` is present.
+   * Bin values that count as pass for yield calculation.
+   * Defaults to `[1]` (industry convention: bin 1 = pass).
+   * Set to an empty array to suppress yield calculation.
    */
-  stack?: {
-    /** One `WaferMapPoint[]` per wafer. */
-    data: WaferMapPoint[][];
-    /** Aggregation method applied per die position across all wafers. */
-    aggr: 'mean' | 'median' | 'stddev' | 'count_bin' | 'mode' | 'percent';
-    /** Required when `aggr` is `'count_bin'` or `'percent'`. */
-    targetBin?: number;
-  };
+  passBins?: number[];
+  /** Lot-level stacking — collapse results from several wafers into a single map. */
+  lotStack?: LotStackConfig;
 }
 
 /** Options forwarded to {@link buildScene}. */
-export interface WaferMapOptions extends BuildSceneOptions {
+export interface WaferMapOptions extends SceneOptions {
   debug?: boolean;
 }
 
 // ── Output types ──────────────────────────────────────────────────────────────
+
+export interface YieldSummary {
+  /** Dies with a bin in `passBins`. */
+  passDies: number;
+  /** Full dies inside wafer boundary with a bin not in `passBins`. */
+  failDies: number;
+  /** Full dies whose centres fall within the edge exclusion zone. */
+  edgeExcludedDies: number;
+  /** Dies that straddle the wafer boundary. */
+  partialDies: number;
+  /** Total full dies inside wafer boundary used for yield (excludes edge and partial). */
+  totalDies: number;
+  /** `passDies / totalDies` in [0, 1], or `null` when no bin data is present. */
+  yieldPercent: number | null;
+}
+
+/** @deprecated Use {@link YieldSummary} */
+export type WaferYield = YieldSummary;
 
 export interface WaferMapResult {
   wafer: Wafer;
@@ -145,97 +205,89 @@ export interface WaferMapResult {
    * Coordinate space of `die.x` / `die.y` and wafer dimensions:
    * - **'mm'**         — at least one physical dimension was provided or could
    *                      be inferred; all spatial values are in real millimetres.
-   * - **'normalised'** — only grid positions were supplied; coordinates are
+   * - **'normalized'** — only grid positions were supplied; coordinates are
    *                      proportionally correct but not in physical mm.
    */
-  units: 'mm' | 'normalised';
+  units: 'mm' | 'normalized';
   inference: {
     wafer:    { confidence: number; method: string };
-    diePitch: { confidence: number; units: 'mm' | 'normalised' };
+    diePitch: { confidence: number; units: 'mm' | 'normalized' };
     grid:     { confidence: number };
   };
   /** Die population statistics. */
   dataCoverage: {
     /** Dies inside the wafer boundary that have at least one value or bin. */
     filledDies: number;
-    /** Total dies inside the wafer boundary. */
+    /** Total dies inside the wafer boundary (including partial). */
     totalDies: number;
+    /** Dies falling within the edge exclusion zone. */
+    edgeExcludedDies: number;
     /** `filledDies / totalDies` in [0, 1]. */
     ratio: number;
   };
+  /** Yield statistics computed against `passBins`. */
+  yield: YieldSummary;
 }
 
-// ── Internal normalised model ─────────────────────────────────────────────────
+// ── Internal normalized model ─────────────────────────────────────────────────
 
 interface Normalized {
-  data:         WaferMapPoint[];
-  waferOpts:    WaferOptions | undefined;
-  dieOpts:      DieOptions   | undefined;
-  explicitDies: Die[]        | undefined;
-  reticleOpts:  WaferMapInput['reticle'] | undefined;
-  stackOpts:    WaferMapInput['stack']   | undefined;
+  results:      DieResult[];
+  waferOpts:    WaferConfig    | undefined;
+  dieOpts:      DieConfig      | undefined;
+  explicitDies: Die[]          | undefined;
+  reticleOpts:  ReticleConfig  | undefined;
+  lotStackOpts: LotStackConfig | undefined;
+  passBins:     number[];
 }
 
-function normalizeInput(input: WaferMapPoint[] | WaferMapInput): Normalized {
+function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
   if (Array.isArray(input)) {
     return {
-      data: input,
+      results:      input,
       waferOpts:    undefined,
       dieOpts:      undefined,
       explicitDies: undefined,
       reticleOpts:  undefined,
-      stackOpts:    undefined,
+      lotStackOpts: undefined,
+      passBins:     [1],
     };
   }
   return {
-    data:         input.data  ?? [],
-    waferOpts:    input.wafer,
-    dieOpts:      input.die,
+    results:      input.results   ?? [],
+    waferOpts:    input.waferConfig,
+    dieOpts:      input.dieConfig,
     explicitDies: input.dies,
-    reticleOpts:  input.reticle,
-    stackOpts:    input.stack,
+    reticleOpts:  input.reticleConfig,
+    lotStackOpts: input.lotStack,
+    passBins:     input.passBins ?? [1],
   };
 }
 
 // ── Notch helper ──────────────────────────────────────────────────────────────
 
-/** Pass the user-supplied notch option through to createWafer unchanged.
- *  createWafer derives the standard length from the wafer diameter. */
 function resolveNotch(
-  waferOpts: WaferOptions | undefined,
+  waferOpts: WaferConfig | undefined,
 ): { type: 'top' | 'bottom' | 'left' | 'right' } | undefined {
   return waferOpts?.notch;
 }
 
 // ── Grid origin & axis helpers ────────────────────────────────────────────────
 
-/**
- * Detect the grid origin convention.
- * When not explicitly specified, auto-detects `'LL'` if all coordinates are ≥ 0
- * (standard output from STDF / KLA Surfscan equipment).
- */
 function detectOrigin(
-  data: WaferMapPoint[],
-  dieOpts: DieOptions | undefined,
-): NonNullable<DieOptions['origin']> {
-  if (dieOpts?.origin) return dieOpts.origin;
-  if (data.length > 0 && data.every(p => p.x >= 0 && p.y >= 0)) {
+  results: DieResult[],
+  dieOpts: DieConfig | undefined,
+): NonNullable<DieConfig['coordinateOrigin']> {
+  if (dieOpts?.coordinateOrigin) return dieOpts.coordinateOrigin;
+  if (results.length > 0 && results.every(p => p.x >= 0 && p.y >= 0)) {
     return { type: 'LL' };
   }
   return { type: 'center' };
 }
 
-/**
- * Compute the integer grid offset that maps prober-step coordinates to a
- * grid centred at the wafer physical origin (0,0).
- *
- * - `custom`  → user-supplied offset.
- * - `LL/UL/LR/UR` → bounding-box centre (exact symmetry for regular grids).
- * - `center`  → centroid from `assignGridIndices` (current default behaviour).
- */
 function resolveGridOriginOffset(
   gridPoints: Array<{ x: number; y: number }>,
-  origin: NonNullable<DieOptions['origin']>,
+  origin: NonNullable<DieConfig['coordinateOrigin']>,
   ga: { offsetX: number; offsetY: number },
 ): { offsetX: number; offsetY: number } {
   if (origin.type === 'custom' && origin.offset) {
@@ -252,28 +304,20 @@ function resolveGridOriginOffset(
   return { offsetX: ga.offsetX, offsetY: ga.offsetY };
 }
 
-/**
- * Derive display-axis flip flags from the origin convention and any explicit
- * axis-direction settings.  Flips are applied only to display coordinates
- * (die.x / die.y); grid indices (i, j) are never modified.
- */
 function resolveAxisFlips(
-  dieOpts: DieOptions | undefined,
-  origin: NonNullable<DieOptions['origin']>,
+  dieOpts: DieConfig | undefined,
+  origin: NonNullable<DieConfig['coordinateOrigin']>,
 ): { flipX: boolean; flipY: boolean } {
   let flipX = dieOpts?.xAxisDirection === 'left';
   let flipY = dieOpts?.yAxisDirection === 'down';
 
-  // Corner-based origins imply axis direction:
-  // UL / UR → y increases downward in prober coords → flip display Y so +Y is up.
-  // LR / UR → x increases leftward → flip display X.
   if (origin.type === 'UL' || origin.type === 'UR') flipY = true;
   if (origin.type === 'LR' || origin.type === 'UR') flipX = true;
 
   return { flipX, flipY };
 }
 
-// ── Stack aggregation ─────────────────────────────────────────────────────────
+// ── Lot-stack aggregation ─────────────────────────────────────────────────────
 
 function modeOf(values: number[]): number | null {
   if (!values.length) return null;
@@ -292,18 +336,12 @@ function medianOf(sorted: number[]): number {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-/**
- * Collapse multi-wafer stack data into a single `WaferMapPoint[]` using the
- * requested aggregation.  The result is used directly as map data.
- */
-function collapseStackData(
-  stack: NonNullable<WaferMapInput['stack']>,
-): WaferMapPoint[] {
-  const { data: waferData, aggr, targetBin } = stack;
-  const totalWafers = waferData.length;
+function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>): DieResult[] {
+  const { results: waferResults, method, targetBin } = lotStack;
+  const totalWafers = waferResults.length;
 
-  const grouped = new Map<string, WaferMapPoint[]>();
-  for (const waferPoints of waferData) {
+  const grouped = new Map<string, DieResult[]>();
+  for (const waferPoints of waferResults) {
     for (const pt of waferPoints) {
       const key = `${pt.x},${pt.y}`;
       if (!grouped.has(key)) grouped.set(key, []);
@@ -311,80 +349,116 @@ function collapseStackData(
     }
   }
 
-  const result: WaferMapPoint[] = [];
+  const result: DieResult[] = [];
 
   for (const [key, points] of grouped) {
     const parts = key.split(',');
     const x = Number(parts[0]);
     const y = Number(parts[1]);
 
-    if (aggr === 'count_bin' && targetBin !== undefined) {
-      result.push({ x, y, value: points.filter(p => p.bin === targetBin).length });
+    const primaryBin = (pt: DieResult) => pt.bins?.[0];
+    const primaryVal = (pt: DieResult): number | undefined => pt.values?.[0];
 
-    } else if (aggr === 'percent' && targetBin !== undefined) {
+    if (method === 'countBin' && targetBin !== undefined) {
+      result.push({ x, y, values: [points.filter(p => primaryBin(p) === targetBin).length] });
+
+    } else if (method === 'percent' && targetBin !== undefined) {
       result.push({
         x, y,
-        value: (points.filter(p => p.bin === targetBin).length / totalWafers) * 100,
+        values: [(points.filter(p => primaryBin(p) === targetBin).length / totalWafers) * 100],
       });
 
-    } else if (aggr === 'mean') {
-      const vals = points.map(p => p.value).filter((v): v is number => v !== undefined);
-      if (vals.length) result.push({ x, y, value: vals.reduce((a, b) => a + b, 0) / vals.length });
+    } else if (method === 'mean') {
+      const vals = points.map(primaryVal).filter((v): v is number => v !== undefined);
+      if (vals.length) result.push({ x, y, values: [vals.reduce((a, b) => a + b, 0) / vals.length] });
 
-    } else if (aggr === 'median') {
+    } else if (method === 'median') {
       const vals = points
-        .map(p => p.value)
+        .map(primaryVal)
         .filter((v): v is number => v !== undefined)
         .sort((a, b) => a - b);
-      if (vals.length) result.push({ x, y, value: medianOf(vals) });
+      if (vals.length) result.push({ x, y, values: [medianOf(vals)] });
 
-    } else if (aggr === 'stddev') {
-      const vals = points.map(p => p.value).filter((v): v is number => v !== undefined);
+    } else if (method === 'stddev') {
+      const vals = points.map(primaryVal).filter((v): v is number => v !== undefined);
       if (vals.length > 1) {
         const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
         const variance = vals.reduce((s, v) => s + (v - mean) ** 2, 0) / (vals.length - 1);
-        result.push({ x, y, value: Math.sqrt(variance) });
+        result.push({ x, y, values: [Math.sqrt(variance)] });
       }
 
-    } else if (aggr === 'mode') {
-      const bins = points.map(p => p.bin).filter((b): b is number => b !== undefined);
+    } else if (method === 'mode') {
+      const bins = points.map(primaryBin).filter((b): b is number => b !== undefined);
       const m = modeOf(bins);
-      if (m !== null) result.push({ x, y, bin: m });
+      if (m !== null) result.push({ x, y, bins: [m] });
     }
   }
 
   return result;
 }
 
-// ── Coverage ──────────────────────────────────────────────────────────────────
+// ── Coverage & yield ──────────────────────────────────────────────────────────
 
 function computeCoverage(dies: Die[]): WaferMapResult['dataCoverage'] {
   const totalDies = dies.length;
+  const edgeExcludedDies = dies.filter(d => d.edgeExcluded).length;
   const filledDies = dies.filter(
     d => (d.values?.length ?? 0) > 0 || (d.bins?.length ?? 0) > 0,
   ).length;
   return {
     filledDies,
     totalDies,
+    edgeExcludedDies,
     ratio: totalDies > 0 ? filledDies / totalDies : 0,
+  };
+}
+
+function computeYield(dies: Die[], passBins: number[]): YieldSummary {
+  const passBinSet = new Set(passBins);
+  const fullDies = dies.filter(d => !d.partial);
+  const edgeExcludedDies = fullDies.filter(d => d.edgeExcluded).length;
+  const partialDies = dies.filter(d => d.partial).length;
+
+  let passDies = 0;
+  let failDies = 0;
+  let hasBinData = false;
+
+  for (const die of fullDies) {
+    if (die.edgeExcluded) continue;
+    const bin = die.bins?.[0];
+    if (bin !== undefined) {
+      hasBinData = true;
+      if (passBinSet.has(bin)) passDies++;
+      else failDies++;
+    }
+  }
+
+  const totalDies = passDies + failDies;
+  return {
+    passDies,
+    failDies,
+    edgeExcludedDies,
+    partialDies,
+    totalDies,
+    yieldPercent: hasBinData && totalDies > 0 ? passDies / totalDies : null,
   };
 }
 
 // ── Reticle builder ───────────────────────────────────────────────────────────
 
 function buildReticles(
-  reticleOpts: WaferMapInput['reticle'],
+  reticleOpts: ReticleConfig | undefined,
   wafer: Wafer,
-  pitchX: number,
-  pitchY: number,
+  diePitchX: number,
+  diePitchY: number,
 ): Reticle[] {
   if (!reticleOpts) return [];
   return generateReticleGrid(wafer, {
-    width:  reticleOpts.width,
-    height: reticleOpts.height,
-    pitchX,
-    pitchY,
-    anchor: reticleOpts.anchor ?? { x: 0, y: 0 },
+    width:      reticleOpts.width,
+    height:     reticleOpts.height,
+    diePitchX,
+    diePitchY,
+    anchorDie:  reticleOpts.anchorDie ?? { x: 0, y: 0 },
   });
 }
 
@@ -399,18 +473,20 @@ function applyEdgeExclusion(dies: Die[], wafer: Wafer, exclusionMm: number): Die
   });
 }
 
-// ── Internal helpers ──────────────────────────────────────────────────────────
+// ── Data attachment ───────────────────────────────────────────────────────────
 
-function attachData(die: Die, pt: WaferMapPoint): Die {
+function attachData(die: Die, pt: DieResult): Die {
   return {
     ...die,
-    ...(pt.value !== undefined ? { values: [pt.value] } : {}),
-    ...(pt.bin   !== undefined ? { bins:   [pt.bin]   } : {}),
+    ...(pt.values !== undefined ? { values: pt.values } : {}),
+    ...(pt.bins   !== undefined ? { bins:   pt.bins   } : {}),
   };
 }
 
-function autoPlotMode(data: WaferMapPoint[], opts: BuildSceneOptions): PlotMode {
-  return opts.plotMode ?? (data.some(d => d.value !== undefined) ? 'value' : 'hardbin');
+function autoPlotMode(results: DieResult[], opts: SceneOptions): PlotMode {
+  if (opts.plotMode) return opts.plotMode;
+  const hasValues = results.some(d => (d.values?.length ?? 0) > 0);
+  return hasValues ? 'value' : 'hardbin';
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────────
@@ -418,76 +494,76 @@ function autoPlotMode(data: WaferMapPoint[], opts: BuildSceneOptions): PlotMode 
 /**
  * Build a complete wafer map from any level of input.
  *
- * `x` and `y` in each data point are **die grid positions** (prober step
+ * `x` and `y` in each result are **die grid positions** (prober step
  * coordinates — integers like −7, 0, 5), not millimetre values.  Supply
  * whatever geometry you have; the library infers the rest.
  *
  * @example Minimal — grid positions + values only (all geometry inferred):
  * ```ts
  * const result = buildWaferMap([
- *   { x:  0, y:  0, value: 0.95 },
- *   { x:  1, y:  0, value: 0.87 },
- *   { x:  0, y: -1, value: 0.91 },
+ *   { x:  0, y:  0, values: [0.95] },
+ *   { x:  1, y:  0, values: [0.87] },
+ *   { x:  0, y: -1, values: [0.91] },
  * ]);
  * const { data, layout } = toPlotly(result.scene);
  * Plotly.react('chart', data, layout);
  * ```
  *
- * @example With die size (recommended — enables mm coordinates):
+ * @example Multi-channel — values and bins supplied directly:
  * ```ts
  * const result = buildWaferMap({
- *   data,
- *   wafer: { diameter: 300, orientation: 90 },
- *   die:   { width: 10, height: 10 },
+ *   results: rows.map(r => ({
+ *     x: +r.x, y: +r.y,
+ *     values: [+r.testA, +r.testB, +r.testC],
+ *     bins:   [+r.hbin, +r.sbin],
+ *   })),
+ *   dieConfig: { width: 10, height: 10 },
  * });
  * ```
  *
  * @example Reticle overlay phased to die (2,1):
  * ```ts
  * const result = buildWaferMap({
- *   data,
- *   die: { width: 10, height: 10 },
- *   reticle: { width: 4, height: 2, anchor: { x: 2, y: 1 } },
+ *   results,
+ *   dieConfig: { width: 10, height: 10 },
+ *   reticleConfig: { width: 4, height: 2, anchorDie: { x: 2, y: 1 } },
  * });
  * ```
  *
  * @example Aggregate bin failures across six wafers:
  * ```ts
  * const result = buildWaferMap({
- *   wafer: { diameter: 300 },
- *   die:   { width: 10, height: 10 },
- *   stack: { data: [wafer1, wafer2, wafer3, wafer4, wafer5, wafer6],
- *            aggr: 'count_bin', targetBin: 2 },
+ *   waferConfig: { diameter: 300 },
+ *   dieConfig:   { width: 10, height: 10 },
+ *   lotStack:    { results: [wafer1, wafer2, wafer3, wafer4, wafer5, wafer6],
+ *               method: 'countBin', targetBin: 2 },
  * });
  * ```
  */
 export function buildWaferMap(
-  input: WaferMapPoint[] | WaferMapInput,
+  input: DieResult[] | WaferMapInput,
   options?: WaferMapOptions,
 ): WaferMapResult {
   const norm = normalizeInput(input);
   const { debug: _debug, ...sceneOpts } = options ?? {};
 
-  // Collapse multi-wafer stack first so the rest of the pipeline sees a normal
-  // WaferMapPoint[] regardless of how the data arrived.
-  const data: WaferMapPoint[] = norm.stackOpts
-    ? collapseStackData(norm.stackOpts)
-    : norm.data;
+  const results: DieResult[] = norm.lotStackOpts
+    ? collapseLotStack(norm.lotStackOpts)
+    : norm.results;
 
   const inference = {
     wafer:    { confidence: 1.0, method: 'provided' },
-    diePitch: { confidence: 1.0, units: 'mm' as 'mm' | 'normalised' },
+    diePitch: { confidence: 1.0, units: 'mm' as 'mm' | 'normalized' },
     grid:     { confidence: 1.0 },
   };
 
   // ── Explicit dies path ─────────────────────────────────────────────────────
-  // Pre-built dies are used as-is; data points are matched by die.(i,j) directly.
 
   if (norm.explicitDies) {
     let dies = norm.explicitDies;
 
-    if (data.length > 0) {
-      const lookup = new Map(data.map(d => [`${d.x},${d.y}`, d]));
+    if (results.length > 0) {
+      const lookup = new Map(results.map(d => [`${d.x},${d.y}`, d]));
       dies = dies.map(die => {
         const pt = lookup.get(`${die.i},${die.j}`);
         return pt ? attachData(die, pt) : die;
@@ -505,39 +581,36 @@ export function buildWaferMap(
     const reticles    = buildReticles(norm.reticleOpts, wafer, 1, 1);
     const showReticle = sceneOpts.showReticle ?? (norm.reticleOpts !== undefined);
 
-    const scene = buildScene(wafer, dies, reticles, {
+    const scene = buildScene(wafer, dies, {
       ...sceneOpts,
+      reticles,
       showReticle,
-      plotMode: autoPlotMode(data, sceneOpts),
+      plotMode: autoPlotMode(results, sceneOpts),
     });
 
-    return { wafer, dies, scene, units: 'mm', inference, dataCoverage: computeCoverage(dies) };
+    return {
+      wafer, dies, scene, units: 'mm', inference,
+      dataCoverage: computeCoverage(dies),
+      yield: computeYield(dies, norm.passBins),
+    };
   }
 
   // ── Grid-position path ─────────────────────────────────────────────────────
 
-  const gridPoints = data.map(d => ({ x: d.x, y: d.y }));
+  const gridPoints = results.map(d => ({ x: d.x, y: d.y }));
 
-  // Step 1: Resolve pitch — mm or normalised depending on available context.
-  const pitchResult = resolveGridPitch(
-    gridPoints,
-    norm.dieOpts,
-    norm.waferOpts?.diameter,
-  );
-  inference.diePitch = { confidence: pitchResult.confidence, units: pitchResult.units };
+  const pitchResult = resolveGridPitch(gridPoints, norm.dieOpts, norm.waferOpts?.diameter);
+  inference.diePitch = { confidence: pitchResult.confidence, units: pitchResult.units as 'mm' | 'normalized' };
   const { pitchX, pitchY } = pitchResult;
-  const units = pitchResult.units;
+  const units = pitchResult.units as 'mm' | 'normalized';
 
-  // Step 2: Resolve grid origin and centring offset.
-  const origin      = detectOrigin(data, norm.dieOpts);
+  const origin      = detectOrigin(results, norm.dieOpts);
   const ga          = assignGridIndices(gridPoints);
   inference.grid    = { confidence: ga.confidence };
   const { offsetX, offsetY } = resolveGridOriginOffset(gridPoints, origin, ga);
 
-  // Step 3: Determine display-axis flips (applied later to x/y only; i/j unchanged).
   const { flipX, flipY } = resolveAxisFlips(norm.dieOpts, origin);
 
-  // Step 4: Infer wafer diameter when not provided.
   let waferDiameter = norm.waferOpts?.diameter;
 
   if (waferDiameter === undefined) {
@@ -559,46 +632,41 @@ export function buildWaferMap(
     metadata:    norm.waferOpts?.metadata,
   });
 
-  // Step 5: Generate and clip the full die grid.
-  const dieConfig = { width: pitchX, height: pitchY };
-  const allDies   = generateDies(wafer, dieConfig);
-  let dies        = clipDiesToWafer(allDies, wafer, dieConfig);
+  const dieConfigGeom = { width: pitchX, height: pitchY };
+  const allDies   = generateDies(wafer, dieConfigGeom);
+  let dies        = clipDiesToWafer(allDies, wafer, dieConfigGeom);
 
-  // Step 6: Attach data.
-  // die.i = origX − offsetX, so origX = die.i + offsetX.
-  // For centred grids (offsetX = 0), die.i === original prober x directly.
-  if (data.length > 0) {
-    const lookup = new Map(data.map(d => [`${d.x},${d.y}`, d]));
+  if (results.length > 0) {
+    const lookup = new Map(results.map(d => [`${d.x},${d.y}`, d]));
     dies = dies.map(die => {
       const pt = lookup.get(`${die.i + offsetX},${die.j + offsetY}`);
       return pt ? attachData(die, pt) : die;
     });
   }
 
-  // Step 7: Apply wafer orientation rotation.
   dies = applyOrientation(dies, wafer);
 
-  // Step 8: Apply display-axis polarity corrections.
-  // These flip die.x / die.y only; die.i / die.j remain as prober indices so
-  // post-enrichment lookups keyed on (i, j) continue to work correctly.
   if (flipX || flipY) {
     dies = transformDies(dies, { flipX, flipY }, wafer.center);
   }
 
-  // Step 9: Mark edge-excluded dies.
   if (norm.waferOpts?.edgeExclusion && norm.waferOpts.edgeExclusion > 0) {
     dies = applyEdgeExclusion(dies, wafer, norm.waferOpts.edgeExclusion);
   }
 
-  // Step 10: Build reticle overlays and scene.
   const reticles    = buildReticles(norm.reticleOpts, wafer, pitchX, pitchY);
   const showReticle = sceneOpts.showReticle ?? (norm.reticleOpts !== undefined);
 
-  const scene = buildScene(wafer, dies, reticles, {
+  const scene = buildScene(wafer, dies, {
     ...sceneOpts,
+    reticles,
     showReticle,
-    plotMode: autoPlotMode(data, sceneOpts),
+    plotMode: autoPlotMode(results, sceneOpts),
   });
 
-  return { wafer, dies, scene, units, inference, dataCoverage: computeCoverage(dies) };
+  return {
+    wafer, dies, scene, units, inference,
+    dataCoverage: computeCoverage(dies),
+    yield: computeYield(dies, norm.passBins),
+  };
 }

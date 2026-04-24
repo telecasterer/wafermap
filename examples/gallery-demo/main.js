@@ -29,13 +29,13 @@ async function main() {
     const data = waferRows.map((row) => ({
       x: Number(row.x),
       y: Number(row.y),
-      bin: Number(row.hbin),
-      value: Number(row.testA),
+      bins:   [Number(row.hbin)],
+      values: [Number(row.testA)],
     }));
 
     const result = buildWaferMap({
-      data,
-      wafer: {
+      results: data,
+      waferConfig: {
         diameter: 150,
         notch: { type: 'bottom' },
         orientation: 0,
@@ -47,10 +47,9 @@ async function main() {
           temperature: Number(firstRow.temp ?? 25),
         },
       },
-      die: { width: PITCH, height: PITCH },
+      dieConfig: { width: PITCH, height: PITCH },
     });
 
-    // buildWaferMap attaches one value (testA) and one bin (hbin).
     // Post-enrich with additional test channels and softbin using the
     // established i/j indices so stacked modes work correctly.
     const rowMap = new Map(waferRows.map((row) => [`${row.x},${row.y}`, row]));
@@ -98,7 +97,7 @@ function renderAll() {
     const wafer = state.wafers[index];
     const dies = state.allDies[waferId];
 
-    const scene = buildScene(wafer, dies, [], {
+    const scene = buildScene(wafer, dies, {
       plotMode: state.plotMode,
       showRingBoundaries: state.showRingBoundaries,
       showQuadrantBoundaries: state.showQuadrantBoundaries,

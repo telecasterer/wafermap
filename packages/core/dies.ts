@@ -1,7 +1,7 @@
 import type { Wafer } from './wafer.js';
 import type { DieMetadata } from './metadata.js';
 
-export interface DieConfig {
+export interface DieSpec {
   width: number;   // mm
   height: number;  // mm
   gridSize?: number;
@@ -29,7 +29,7 @@ export interface Die {
  * Generate a rectangular grid of dies centered on the wafer.
  * Each die carries its width/height for use by the renderer.
  */
-export function generateDies(wafer: Wafer, dieConfig: DieConfig): Die[] {
+export function generateDies(wafer: Wafer, dieConfig: DieSpec): Die[] {
   const { width, height, offset = { x: 0, y: 0 } } = dieConfig;
   const gridSize = dieConfig.gridSize ?? Math.ceil(wafer.radius / Math.min(width, height)) + 1;
   const dies: Die[] = [];

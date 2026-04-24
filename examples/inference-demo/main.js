@@ -28,7 +28,7 @@ function renderPanel(chartId, bodyId, result, provided) {
 
   const unitsBadge = units === 'mm'
     ? '<span class="tag tag-provided">mm</span>'
-    : '<span class="tag tag-inferred">normalised</span>';
+    : '<span class="tag tag-inferred">normalized</span>';
 
   const tag = field => provided.has(field)
     ? '<span class="tag tag-provided">given</span>'
@@ -83,9 +83,9 @@ function confColor(c) {
 
 function buildInputCode(provided, dieW, dieH, diameter) {
   if (provided.size === 0) return 'buildWaferMap(data)';
-  const parts = ['data'];
-  if (provided.has('die'))      parts.push(`die: { width: ${dieW}, height: ${dieH} }`);
-  if (provided.has('diameter')) parts.push(`wafer: { diameter: ${diameter} }`);
+  const parts = ['results: data'];
+  if (provided.has('die'))      parts.push(`dieConfig: { width: ${dieW}, height: ${dieH} }`);
+  if (provided.has('diameter')) parts.push(`waferConfig: { diameter: ${diameter} }`);
   return `buildWaferMap({\n  ${parts.join(',\n  ')}\n})`;
 }
 
@@ -95,28 +95,28 @@ async function main() {
   const rows = await loadCsv('../../data/inference-demo.csv');
 
   // x,y are prober step positions (integers), value is the test result.
-  const data = rows.map(r => ({ x: Number(r.x), y: Number(r.y), value: Number(r.value) }));
+  const data = rows.map(r => ({ x: Number(r.x), y: Number(r.y), values: [Number(r.value)] }));
 
   document.getElementById('data-summary').textContent =
     `${data.length} points · columns: x (grid), y (grid), value · no geometry context`;
 
-  // Level 1: grid positions only — all geometry inferred, normalised units.
+  // Level 1: grid positions only — all geometry inferred, normalized units.
   const r1 = buildWaferMap(data);
   renderPanel('chart-1', 'body-1', r1, new Set());
 
   // Level 2: die size provided — mm coordinates, infer wafer diameter.
-  const r2 = buildWaferMap({ data, die: { width: 10, height: 10 } });
+  const r2 = buildWaferMap({ results: data, dieConfig: { width: 10, height: 10 } });
   renderPanel('chart-2', 'body-2', r2, new Set(['die']));
 
   // Level 3: wafer diameter provided — mm coordinates, infer die size.
-  const r3 = buildWaferMap({ data, wafer: { diameter: 300 } });
+  const r3 = buildWaferMap({ results: data, waferConfig: { diameter: 300 } });
   renderPanel('chart-3', 'body-3', r3, new Set(['diameter']));
 
   // Level 4: fully specified — no inference needed.
   const r4 = buildWaferMap({
-    data,
-    wafer: { diameter: 300 },
-    die:   { width: 10, height: 10 },
+    results:     data,
+    waferConfig: { diameter: 300 },
+    dieConfig:   { width: 10, height: 10 },
   });
   renderPanel('chart-4', 'body-4', r4, new Set(['diameter', 'die']));
 }

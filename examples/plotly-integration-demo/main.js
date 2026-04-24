@@ -16,7 +16,7 @@ const state = {
   showRingBoundaries: false,
   showQuadrantBoundaries: false,
   showAxes: true,
-  showUnits: false,
+  showPhysicalUnits: false,
   ringCount: 4,
   colorScheme: 'color',
   wafer: null,
@@ -30,15 +30,15 @@ async function main() {
 
   // Primary pass — x,y are prober step positions (die grid indices, not mm).
   const data = waferRows.map(row => ({
-    x:   Number(row.x),
-    y:   Number(row.y),
-    bin: Number(row.hbin),
-    value: Number(row.testA),
+    x:      Number(row.x),
+    y:      Number(row.y),
+    bins:   [Number(row.hbin)],
+    values: [Number(row.testA)],
   }));
 
   const result = buildWaferMap({
-    data,
-    wafer: {
+    results: data,
+    waferConfig: {
       diameter: WAFER_DIAMETER,
       notch: { type: 'bottom' },
       orientation: 0,
@@ -50,7 +50,7 @@ async function main() {
         temperature:  Number(firstRow.temp ?? 25),
       },
     },
-    die: { width: PITCH, height: PITCH },
+    dieConfig: { width: PITCH, height: PITCH },
   });
 
   state.wafer = result.wafer;
@@ -101,7 +101,7 @@ function bindControls() {
   bindToggle('toggle-rings',      'showRingBoundaries');
   bindToggle('toggle-quadrants',  'showQuadrantBoundaries');
   bindToggle('toggle-axes',       'showAxes');
-  bindToggle('toggle-units',      'showUnits');
+  bindToggle('toggle-units',      'showPhysicalUnits');
 
   const colorSel = document.getElementById('color-scheme');
   colorSel.innerHTML = listColorSchemes()
@@ -114,7 +114,7 @@ function bindControls() {
 function render() {
   updateToggleStates();
 
-  const scene = buildScene(state.wafer, state.dies, [], {
+  const scene = buildScene(state.wafer, state.dies, {
     plotMode:               state.plotMode,
     showText:               state.showText,
     ringCount:              state.ringCount,
@@ -125,8 +125,8 @@ function render() {
 
   const { data, layout } = toPlotly(scene, {
     showAxes:  state.showAxes,
-    showUnits: state.showUnits,
-    diePitch:  { x: PITCH, y: PITCH },
+    showPhysicalUnits: state.showPhysicalUnits,
+    diePitchMm:        { x: PITCH, y: PITCH },
   });
   Plotly.react('chart', data, {
     ...layout,
@@ -145,7 +145,7 @@ function updateToggleStates() {
     ['toggle-rings',     state.showRingBoundaries],
     ['toggle-quadrants', state.showQuadrantBoundaries],
     ['toggle-axes',      state.showAxes],
-    ['toggle-units',     state.showUnits],
+    ['toggle-units',     state.showPhysicalUnits],
   ]) {
     document.getElementById(id).classList.toggle('active', active);
   }
