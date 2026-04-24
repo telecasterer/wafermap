@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>wafermap — demos</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      color: #1a1d23;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 24px;
+    }
+    header { text-align: center; margin-bottom: 48px; }
+    header h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; }
+    header p { margin-top: 8px; color: #6b7280; font-size: 1rem; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 20px;
+      width: 100%;
+      max-width: 960px;
+    }
+    a.card {
+      display: block;
+      background: #fff;
+      border: 1px solid #e2e5ea;
+      border-radius: 10px;
+      padding: 24px;
+      text-decoration: none;
+      color: inherit;
+      transition: box-shadow 0.15s, border-color 0.15s;
+    }
+    a.card:hover {
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+      border-color: #2563eb;
+    }
+    .card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 6px; }
+    .card p  { font-size: 0.875rem; color: #6b7280; line-height: 1.5; }
+    .badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 4px;
+      margin-bottom: 10px;
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+    .badge.advanced { background: #fef3c7; color: #92400e; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>wafermap</h1>
+    <p>Browser-first wafer map visualization for semiconductor test data</p>
+  </header>
+
+  <div class="grid">
+    <a class="card" href="examples/plotly-integration-demo/">
+      <div class="badge">buildWaferMap</div>
+      <h2>Plotly Integration</h2>
+      <p>Single-wafer recipe with spatial stats, multi-channel values, and post-enrichment.</p>
+    </a>
+    <a class="card" href="examples/gallery-demo/">
+      <div class="badge">buildWaferMap</div>
+      <h2>Lot Gallery</h2>
+      <p>2×2 grid of wafers from a lot. Shared colour scheme, per-wafer yield stats.</p>
+    </a>
+    <a class="card" href="examples/bin-gallery-demo/">
+      <div class="badge">buildWaferMap</div>
+      <h2>Bin Gallery</h2>
+      <p>Stacked bin occurrence maps across six wafers using lot-level aggregation.</p>
+    </a>
+    <a class="card" href="examples/inference-demo/">
+      <div class="badge">buildWaferMap</div>
+      <h2>Inference Demo</h2>
+      <p>Same CSV at four levels of geometry input — shows how the library infers missing parameters.</p>
+    </a>
+    <a class="card" href="examples/app-demo/">
+      <div class="badge">buildWaferMap</div>
+      <h2>CSV Upload App</h2>
+      <p>Upload your own CSV. Column mapping, per-wafer gallery, Pareto chart.</p>
+    </a>
+    <a class="card" href="examples/vite-demo/">
+      <div class="badge">buildWaferMap</div>
+      <h2>Vite Consumer</h2>
+      <p>Bundler workflow example — consumes wafermap as a local npm package via Vite.</p>
+    </a>
+    <a class="card" href="examples/basic-demo/">
+      <div class="badge advanced">manual pipeline</div>
+      <h2>Basic Demo</h2>
+      <p>Advanced reference: all plot modes, rotate/flip, probe path, reticle overlay, ring boundaries.</p>
+    </a>
+  </div>
+</body>
+</html>

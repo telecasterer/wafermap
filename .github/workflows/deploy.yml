@@ -1,0 +1,69 @@
+name: Deploy demos to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Build library (dist/)
+        run: npm run build
+
+      - name: Install vite-demo dependencies
+        run: npm ci
+        working-directory: examples/vite-demo
+
+      - name: Build vite-demo
+        run: npm run build
+        working-directory: examples/vite-demo
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          # Library output — demos import from ../../dist/index.js
+          cp -r dist _site/dist
+          # All example directories
+          cp -r examples _site/examples
+          # Replace vite-demo with its compiled output
+          rm -rf _site/examples/vite-demo
+          cp -r examples/vite-demo/dist _site/examples/vite-demo
+          # CSV data files — demos load from ../../data/
+          cp -r data _site/data
+          # Landing page
+          cp index.html _site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
