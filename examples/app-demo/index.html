@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>wafermap analyzer</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-  <script type="importmap">{ "imports": { "wafermap": "../../dist/index.js" } }</script>
+  <script type="importmap">{ "imports": {
+    "wafermap":         "../../dist/index.js",
+    "wafermap/worker":  "../../dist/packages/worker/index.js"
+  } }</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -413,6 +416,41 @@
       font-size: 12px;
     }
     .sidebar-placeholder svg { opacity: .3; }
+
+    /* ── Loading overlay ─────────────────────────────────── */
+    #loading-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 22, 35, 0.55);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      z-index: 100;
+      backdrop-filter: blur(2px);
+    }
+    #loading-overlay[hidden] { display: none; }
+
+    .loading-spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid rgba(255,255,255,.2);
+      border-top-color: #60a5fa;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #e2e8f0;
+    }
+    .loading-sub {
+      font-size: 11px;
+      color: #94a3b8;
+    }
   </style>
 </head>
 <body>
@@ -610,6 +648,12 @@
     </section>
 
   </main>
+</div>
+
+<div id="loading-overlay" hidden>
+  <div class="loading-spinner"></div>
+  <div class="loading-label">Processing wafer data…</div>
+  <div class="loading-sub" id="loading-sub"></div>
 </div>
 
 <script type="module" src="app.js"></script>

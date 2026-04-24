@@ -29,6 +29,14 @@
     "./plotly-adapter": {
       "types": "./dist/packages/plotly-adapter/index.d.ts",
       "import": "./dist/packages/plotly-adapter/index.js"
+    },
+    "./worker": {
+      "types": "./dist/packages/worker/index.d.ts",
+      "import": "./dist/packages/worker/index.js"
+    },
+    "./worker-script": {
+      "types": "./dist/packages/worker/wafermap.worker.d.ts",
+      "import": "./dist/packages/worker/wafermap.worker.js"
     }
   },
   "sideEffects": false,

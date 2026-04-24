@@ -1,5 +1,4 @@
 import {
-  buildWaferMap,
   getUniqueBins,
   aggregateBinCounts,
   getColorScheme,
@@ -7,6 +6,10 @@ import {
   buildScene,
   toPlotly,
 } from 'wafermap';
+import { createWafermapWorker } from 'wafermap/worker';
+
+const workerUrl = new URL('../../dist/packages/worker/wafermap.worker.js', import.meta.url);
+const wmWorker = createWafermapWorker(new Worker(workerUrl, { type: 'module' }));
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -90,28 +93,40 @@ function autoDetect(headers, rows) {
 
 // ── Data processing ───────────────────────────────────────────────────────────
 
-function processData() {
+async function processData() {
   const { rows, cfg } = state;
   const waferIds = [...new Set(rows.map(r => r[cfg.waferCol]))].sort();
 
-  const diesByWafer = {};
+  setLoading(true, `Processing ${waferIds.length} wafer${waferIds.length !== 1 ? 's' : ''}…`);
 
-  for (const waferId of waferIds) {
+  // Build per-wafer inputs and dispatch all to the worker in parallel.
+  const waferInputs = waferIds.map(waferId => {
     const waferRows = rows.filter(r => r[cfg.waferCol] === waferId);
-
     // x,y columns contain prober step positions (die grid indices, not mm).
-    const data = waferRows.map(r => ({
-      x:    Number(r[cfg.xCol]),
-      y:    Number(r[cfg.yCol]),
-      bins:   cfg.hbinCol      ? [Number(r[cfg.hbinCol])]                           : undefined,
-      values: cfg.valueCols[0] ? [Number(r[cfg.valueCols[0]])]                      : undefined,
+    const results = waferRows.map(r => ({
+      x:      Number(r[cfg.xCol]),
+      y:      Number(r[cfg.yCol]),
+      bins:   cfg.hbinCol      ? [Number(r[cfg.hbinCol])]      : undefined,
+      values: cfg.valueCols[0] ? [Number(r[cfg.valueCols[0]])] : undefined,
     }));
+    return { waferId, waferRows, results };
+  });
 
-    const result = buildWaferMap({ results: data });
+  const workerResults = await Promise.all(
+    waferInputs.map(({ results }) => wmWorker.run({ results }))
+  );
+
+  const diesByWafer = {};
+  let sharedWafer = null;
+
+  for (let i = 0; i < waferIds.length; i++) {
+    const waferId   = waferIds[i];
+    const waferRows = waferInputs[i].waferRows;
+    const result    = workerResults[i];
 
     // Post-enrich with additional channels — die.i === prober x for centred grids.
     const rowMap = new Map(waferRows.map(r => [`${r[cfg.xCol]},${r[cfg.yCol]}`, r]));
-    const dies = result.dies.map(die => {
+    diesByWafer[waferId] = result.dies.map(die => {
       const row = rowMap.get(`${die.i},${die.j}`);
       if (!row) return { ...die, values: [], bins: [], metadata: {} };
       return {
@@ -129,12 +144,19 @@ function processData() {
     });
 
     // All wafers share the same wafer geometry (use the first one).
-    if (!state.data.wafer) state.data.wafer = result.wafer;
-    diesByWafer[waferId] = dies;
+    if (!sharedWafer) sharedWafer = result.wafer;
   }
 
-  state.data = { waferIds, wafer: state.data.wafer, diesByWafer };
+  setLoading(false);
+  state.data = { waferIds, wafer: sharedWafer, diesByWafer };
   state.ui.selectedWafers = new Set(waferIds.slice(0, Math.min(4, waferIds.length)));
+}
+
+function setLoading(visible, sub = '') {
+  const overlay = document.getElementById('loading-overlay');
+  const subEl   = document.getElementById('loading-sub');
+  overlay.hidden = !visible;
+  if (subEl) subEl.textContent = sub;
 }
 
 // ── Analytics charts ──────────────────────────────────────────────────────────
@@ -484,9 +506,9 @@ function wireEvents() {
 
   document.getElementById('btn-reopen').addEventListener('click', () => fileInput.click());
 
-  document.getElementById('btn-process').addEventListener('click', () => {
+  document.getElementById('btn-process').addEventListener('click', async () => {
     readConfig();
-    processData();
+    await processData();
     populatePassBinSelector();
     populateMapControls();
 
