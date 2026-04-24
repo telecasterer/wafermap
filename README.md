@@ -5,7 +5,7 @@ Browser-first wafer map visualization for semiconductor test data.
 **[Live demos →](https://telecasterer.github.io/wafermap/)**
 
 | Demo | Live | Source |
-|------|------|--------|
+| --- | --- | --- |
 | Plotly Integration | [open](https://telecasterer.github.io/wafermap/examples/plotly-integration-demo/) | [examples/plotly-integration-demo/](examples/plotly-integration-demo/) |
 | Lot Gallery | [open](https://telecasterer.github.io/wafermap/examples/gallery-demo/) | [examples/gallery-demo/](examples/gallery-demo/) |
 | Bin Gallery | [open](https://telecasterer.github.io/wafermap/examples/bin-gallery-demo/) | [examples/bin-gallery-demo/](examples/bin-gallery-demo/) |
@@ -19,7 +19,7 @@ Browser-first wafer map visualization for semiconductor test data.
 ## Quick start
 
 ```ts
-import { buildWaferMap, toPlotly } from 'wafermap';
+import { buildWaferMap, toPlotly } from '@paulrobins/wafermap';
 
 const result = buildWaferMap({
   results: rows.map(r => ({ x: +r.x, y: +r.y, bins: [+r.hbin], values: [+r.testA] })),

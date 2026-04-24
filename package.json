@@ -1,5 +1,5 @@
 {
-  "name": "wafermap",
+  "name": "@paulrobins/wafermap",
   "version": "0.1.0",
   "description": "Browser-first wafer map visualization toolkit with a renderer abstraction and Plotly adapter.",
   "type": "module",
