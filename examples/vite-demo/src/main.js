@@ -18,11 +18,11 @@ const waferMeta = {
 document.querySelector('#app').innerHTML = `
   <main class="shell">
     <section class="hero">
-      <span class="eyebrow">Bundler Example</span>
+      <span class="eyebrow">Bundler Setup</span>
       <h1>wafermap + Vite + Plotly</h1>
       <p>
-        This example consumes the local <code>wafermap</code> package through a normal bundler workflow.
-        It is the next step after the browser import-map demos.
+        Consumes <code>wafermap</code> as a local npm package via Vite.
+        The starting point for any bundler-based project (React, Vue, Svelte…).
       </p>
     </section>
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>wafermap Integration Recipe</title>
+  <title>wafermap — Single Wafer</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <script type="importmap">
     {
@@ -169,12 +169,12 @@
 <body>
   <div class="shell">
     <div class="hero">
-      <span class="eyebrow">Integration Recipe</span>
-      <h1>Small App, Same Wafer Engine</h1>
+      <span class="eyebrow">Single Wafer</span>
+      <h1>Single-wafer map with stats</h1>
       <p>
-        This example is intentionally smaller than the showcase demo. It uses the built <code>wafermap</code>
-        package through an import map, loads wafer data in app code, builds a renderer scene, and hands the
-        result to Plotly without duplicating wafer geometry logic.
+        One wafer, three test channels, spatial ring and quadrant statistics, and Plotly click drill-down.
+        Shows the standard <code>buildWaferMap</code> → <code>buildScene</code> → <code>toPlotly</code> flow
+        with post-enrichment for multi-channel data.
       </p>
     </div>
 

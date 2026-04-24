@@ -6,13 +6,13 @@ Browser-first wafer map visualization for semiconductor test data.
 
 | Demo | Live | Source |
 | --- | --- | --- |
-| Plotly Integration | [open](https://telecasterer.github.io/wafermap/examples/plotly-integration-demo/) | [examples/plotly-integration-demo/](examples/plotly-integration-demo/) |
+| Single Wafer | [open](https://telecasterer.github.io/wafermap/examples/plotly-integration-demo/) | [examples/plotly-integration-demo/](examples/plotly-integration-demo/) |
 | Lot Gallery | [open](https://telecasterer.github.io/wafermap/examples/gallery-demo/) | [examples/gallery-demo/](examples/gallery-demo/) |
-| Bin Gallery | [open](https://telecasterer.github.io/wafermap/examples/bin-gallery-demo/) | [examples/bin-gallery-demo/](examples/bin-gallery-demo/) |
-| Inference Demo | [open](https://telecasterer.github.io/wafermap/examples/inference-demo/) | [examples/inference-demo/](examples/inference-demo/) |
-| CSV Upload App | [open](https://telecasterer.github.io/wafermap/examples/app-demo/) | [examples/app-demo/](examples/app-demo/) |
-| Vite Consumer | [open](https://telecasterer.github.io/wafermap/examples/vite-demo/) | [examples/vite-demo/](examples/vite-demo/) |
-| Basic Demo (manual pipeline) | [open](https://telecasterer.github.io/wafermap/examples/basic-demo/) | [examples/basic-demo/](examples/basic-demo/) |
+| Bin Occurrence Map | [open](https://telecasterer.github.io/wafermap/examples/bin-gallery-demo/) | [examples/bin-gallery-demo/](examples/bin-gallery-demo/) |
+| Geometry Inference | [open](https://telecasterer.github.io/wafermap/examples/inference-demo/) | [examples/inference-demo/](examples/inference-demo/) |
+| CSV Analyzer | [open](https://telecasterer.github.io/wafermap/examples/app-demo/) | [examples/app-demo/](examples/app-demo/) |
+| Bundler Setup | [open](https://telecasterer.github.io/wafermap/examples/vite-demo/) | [examples/vite-demo/](examples/vite-demo/) |
+| Manual Pipeline | [open](https://telecasterer.github.io/wafermap/examples/basic-demo/) | [examples/basic-demo/](examples/basic-demo/) |
 
 ---
 

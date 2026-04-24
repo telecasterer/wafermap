@@ -4,10 +4,12 @@ This document describes the public API exposed by `wafermap`.
 
 The public package surface is exported from:
 
-- `wafermap`
-- `wafermap/core`
-- `wafermap/renderer`
-- `wafermap/plotly-adapter`
+- `@paulrobins/wafermap`
+- `@paulrobins/wafermap/core`
+- `@paulrobins/wafermap/renderer`
+- `@paulrobins/wafermap/plotly-adapter`
+- `@paulrobins/wafermap/worker` — `createWafermapWorker()`
+- `@paulrobins/wafermap/worker-script` — the worker script itself (for bundler `?url` imports)
 
 ---
 
@@ -29,7 +31,7 @@ Physical mm positions appear only on the `Die` output objects (`die.x`, `die.y`)
 ## Quick Start
 
 ```ts
-import { buildWaferMap, toPlotly } from 'wafermap';
+import { buildWaferMap, toPlotly } from '@paulrobins/wafermap';
 
 // x,y are prober step positions (die grid indices), not mm.
 const result = buildWaferMap([
@@ -415,20 +417,103 @@ Behaviour:
 
 ---
 
+## Web Worker
+
+For large datasets, `buildWaferMap` can be moved off the main thread to keep the
+UI responsive.  The `wafermap/worker` subpackage provides a thin wrapper around a
+pre-built worker script.
+
+**When to use it:** datasets with ~10,000+ rows, or many wafers processed at once.
+For small fixed datasets the overhead is not worth it.  `buildScene` and `toPlotly`
+are fast rendering operations and always run on the main thread regardless.
+
+### Setup
+
+```ts
+import { createWafermapWorker } from '@paulrobins/wafermap/worker';
+
+// Bundler (Vite, webpack…) — import the worker script URL
+import workerUrl from '@paulrobins/wafermap/worker-script?url';
+const worker = createWafermapWorker(new Worker(workerUrl, { type: 'module' }));
+
+// Plain HTML / CDN
+const worker = createWafermapWorker(
+  new Worker('https://cdn.jsdelivr.net/npm/@paulrobins/wafermap/dist/packages/worker/wafermap.worker.js', { type: 'module' })
+);
+```
+
+Create the worker once and reuse it for all calls.
+
+### `createWafermapWorker(worker)`
+
+Wraps a `Worker` instance in a promise-based API.
+
+```ts
+import { createWafermapWorker } from '@paulrobins/wafermap/worker';
+
+const wm = createWafermapWorker(new Worker(workerUrl, { type: 'module' }));
+```
+
+Returns a `WafermapWorker`:
+
+```ts
+{
+  run(input: WaferMapInput): Promise<WaferMapResult>
+  terminate(): void
+}
+```
+
+### `worker.run(input)`
+
+Identical input and output to `buildWaferMap` — just async.
+
+```ts
+// Replaces:
+const result = buildWaferMap({ results, waferConfig, dieConfig });
+
+// With:
+const result = await worker.run({ results, waferConfig, dieConfig });
+
+// Everything after is unchanged:
+const { data, layout } = toPlotly(result.scene);
+Plotly.react('chart', data, layout);
+```
+
+Multiple concurrent calls are safe — each is tracked by an internal ID and
+resolves independently.  Run wafers in parallel with `Promise.all`:
+
+```ts
+const results = await Promise.all(
+  waferIds.map(id => worker.run({ results: dataByWafer[id], dieConfig }))
+);
+```
+
+### `worker.terminate()`
+
+Shuts down the underlying worker.  Any in-flight `run()` calls reject immediately.
+Call when the worker is no longer needed (e.g. component unmount).
+
+```ts
+worker.terminate();
+```
+
+---
+
 ## Package surface
 
 Most consumers import from the top-level package:
 
 ```ts
-import { buildWaferMap, toPlotly } from 'wafermap';
+import { buildWaferMap, toPlotly } from '@paulrobins/wafermap';
 ```
 
 Or from subpath exports:
 
 ```ts
-import { buildWaferMap }             from 'wafermap/renderer';
-import { createWafer, generateDies } from 'wafermap/core';
-import { toPlotly }                  from 'wafermap/plotly-adapter';
+import { buildWaferMap }             from '@paulrobins/wafermap/renderer';
+import { createWafer, generateDies } from '@paulrobins/wafermap/core';
+import { toPlotly }                  from '@paulrobins/wafermap/plotly-adapter';
+import { createWafermapWorker }      from '@paulrobins/wafermap/worker';
 ```
 
 ---
@@ -438,7 +523,7 @@ import { toPlotly }                  from 'wafermap/plotly-adapter';
 For full control over each pipeline stage, use the low-level functions directly.
 These are the building blocks that `buildWaferMap` uses internally.
 
-`basic-demo` is the reference demo for this path.  Prefer `buildWaferMap` for all
+The **Manual Pipeline** demo (`basic-demo`) is the reference for this path.  Prefer `buildWaferMap` for all
 other use cases.
 
 ```text
