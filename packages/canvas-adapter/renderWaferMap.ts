@@ -70,32 +70,36 @@ export interface WaferCanvasController {
 
 // ── SVG icon set — matches Plotly modebar visual vocabulary where applicable ───
 const ICONS: Record<string, string> = {
-  // Zoom in: magnifier + plus — matches Plotly zoom_plus
-  zoomIn:    `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="6"/><line x1="10" y1="7" x2="10" y2="13"/><line x1="7" y1="10" x2="13" y2="10"/><line x1="15" y1="15" x2="21" y2="21"/></svg>`,
-  // Zoom out: magnifier + minus — matches Plotly zoom_minus
-  zoomOut:   `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="6"/><line x1="7" y1="10" x2="13" y2="10"/><line x1="15" y1="15" x2="21" y2="21"/></svg>`,
-  // Reset/autoscale: four corner-bracket arrows — matches Plotly autoscale
-  reset:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9V4h5"/><path d="M3 15v5h5"/><path d="M21 9V4h-5"/><path d="M21 15v5h-5"/><path d="M7 7l10 10M17 7L7 17" stroke-width="1.2" stroke-opacity="0.4"/></svg>`,
-  // Box select: dashed rectangle with corner marks — matches Plotly selectbox
-  boxSelect: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3H3v2" stroke-dasharray="0"/><path d="M19 3h2v2" stroke-dasharray="0"/><path d="M5 21H3v-2" stroke-dasharray="0"/><path d="M19 21h2v-2" stroke-dasharray="0"/><rect x="3" y="3" width="18" height="18" rx="0" stroke-dasharray="3 2" stroke-width="1.5"/></svg>`,
-  // Camera: download this map as PNG — matches Plotly camera icon
-  download:  `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`,
+  // Pan mode: open hand — matches Plotly pan icon
+  pan:       `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V8.5a1.5 1.5 0 0 0-3 0V11"/><path d="M15 10.5a1.5 1.5 0 0 0-3 0V11"/><path d="M12 10a1.5 1.5 0 0 0-3 0v1"/><path d="M9 10.5V6a1.5 1.5 0 0 0-3 0v8l-.3-.4C5 12.6 4 12 3.3 12c-.6 0-1 .5-.7 1l1.3 2.3C5 17.3 6.7 19 9 19h4c2.8 0 5-2.2 5-5v-3"/></svg>`,
+  // Zoom mode: magnifier over a dashed box — matches Plotly zoom icon
+  zoomMode:  `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V4h3" stroke-dasharray="0"/><path d="M21 7V4h-3" stroke-dasharray="0"/><path d="M3 17v3h3" stroke-dasharray="0"/><path d="M21 17v3h-3" stroke-dasharray="0"/><rect x="3" y="4" width="18" height="16" stroke-dasharray="3 2" stroke-width="1.4"/><circle cx="12.5" cy="11.5" r="3.5"/><line x1="15" y1="14" x2="18" y2="17"/></svg>`,
+  // Box select: dashed rectangle with corner marks — matches Plotly select icon
+  boxSelect: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3H3v2"/><path d="M19 3h2v2"/><path d="M5 21H3v-2"/><path d="M19 21h2v-2"/><rect x="3" y="3" width="18" height="18" stroke-dasharray="3 2" stroke-width="1.4"/></svg>`,
+  // Zoom in: magnifier + plus — matches Plotly zoom_in
+  zoomIn:    `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="6"/><line x1="10" y1="7" x2="10" y2="13"/><line x1="7" y1="10" x2="13" y2="10"/><line x1="15" y1="15" x2="21" y2="21"/></svg>`,
+  // Zoom out: magnifier + minus — matches Plotly zoom_out
+  zoomOut:   `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="6"/><line x1="7" y1="10" x2="13" y2="10"/><line x1="15" y1="15" x2="21" y2="21"/></svg>`,
+  // Reset/autoscale: house icon — matches Plotly reset_axes (home)
+  reset:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 9.5V20h5v-5h4v5h5V9.5"/></svg>`,
+  // Camera: download as PNG — matches Plotly camera icon
+  download:  `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`,
   // Rotate CW: circular arrow clockwise
-  rotateCW:  `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9"/><polyline points="21 3 21 9 15 9"/></svg>`,
+  rotateCW:  `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9"/><polyline points="21 3 21 9 15 9"/></svg>`,
   // Flip horizontal: vertical axis with symmetric arrows
-  flipH:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><polyline points="7 8 3 12 7 16"/><polyline points="17 8 21 12 17 16"/></svg>`,
+  flipH:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><polyline points="7 8 3 12 7 16"/><polyline points="17 8 21 12 17 16"/></svg>`,
   // Flip vertical: horizontal axis with symmetric arrows
-  flipV:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><polyline points="8 7 12 3 16 7"/><polyline points="8 17 12 21 16 17"/></svg>`,
+  flipV:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><polyline points="8 7 12 3 16 7"/><polyline points="8 17 12 21 16 17"/></svg>`,
   // Ring boundaries: concentric circles (wafer-specific)
-  rings:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg>`,
+  rings:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg>`,
   // Quadrant boundaries: circle divided by crosshairs (wafer-specific)
-  quadrants: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="3" y1="12" x2="21" y2="12"/></svg>`,
+  quadrants: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="3" y1="12" x2="21" y2="12"/></svg>`,
   // Die labels: "A" letter over a die grid square
-  labels:    `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 17l3-9 3 9"/><line x1="10.5" y1="13.5" x2="13.5" y2="13.5"/></svg>`,
+  labels:    `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 17l3-9 3 9"/><line x1="10.5" y1="13.5" x2="13.5" y2="13.5"/></svg>`,
   // Colour palette: paint palette shape with dots
-  palette:   `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C7 3 3 7 3 12c0 4.4 3.1 8 7.3 8.8.4.1.7-.3.7-.7v-1.5c-2.8.6-3.4-1.4-3.4-1.4-.4-1.1-1.1-1.4-1.1-1.4-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8.1-.6.3-1.1.6-1.3-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.8 1a9.7 9.7 0 0 1 5 0c1.9-1.3 2.8-1 2.8-1 .5 1.4.2 2.4.1 2.7.7.7 1 1.6 1 2.7 0 3.9-2.4 4.7-4.6 5 .4.3.7 1 .7 2v3c0 .4.3.8.7.7C17.9 20 21 16.4 21 12c0-5-4-9-9-9z"/></svg>`,
+  palette:   `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C7 3 3 7 3 12c0 4.4 3.1 8 7.3 8.8.4.1.7-.3.7-.7v-1.5c-2.8.6-3.4-1.4-3.4-1.4-.4-1.1-1.1-1.4-1.1-1.4-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8.1-.6.3-1.1.6-1.3-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.8 1a9.7 9.7 0 0 1 5 0c1.9-1.3 2.8-1 2.8-1 .5 1.4.2 2.4.1 2.7.7.7 1 1.6 1 2.7 0 3.9-2.4 4.7-4.6 5 .4.3.7 1 .7 2v3c0 .4.3.8.7.7C17.9 20 21 16.4 21 12c0-5-4-9-9-9z"/></svg>`,
   // Plot mode: four coloured die squares (wafer-specific)
-  mode:      `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
+  mode:      `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
 };
 
 // ── Toolbar colours ───────────────────────────────────────────────────────────
@@ -167,7 +171,11 @@ export function renderWaferMap(
   let viewport:       ViewportTransform | null = null;
   let isPanning       = false;
   let isBoxSelecting  = false;
-  let boxSelectActive = false;
+  // Interaction mode: 'pan' | 'zoom' | 'select'
+  // 'pan'    — drag pans; scroll wheel is disabled (prevents accidental zoom)
+  // 'zoom'   — drag draws a zoom-box; scroll wheel zooms
+  // 'select' — drag draws a selection box (only available when onSelect provided)
+  let interactMode: 'pan' | 'zoom' | 'select' = 'pan';
   let panStart        = { x: 0, y: 0 };
   let panOrigin       = { x: 0, y: 0 };
   let boxStart        = { x: 0, y: 0 };
@@ -394,16 +402,30 @@ export function renderWaferMap(
 
       // ── Wire up toolbar buttons ──────────────────────────────────────────
 
-      // Box select (only if onSelect provided) — always first so it's leftmost
-      if (onSelect) {
-        btnBoxSelect = makeBtn('boxSelect', 'Box select dies', () => {
-          boxSelectActive = !boxSelectActive;
-          setActive(btnBoxSelect!, boxSelectActive);
-          canvas.style.cursor = boxSelectActive ? 'crosshair' : 'grab';
-        });
-        toolbar.appendChild(btnBoxSelect);
-        toolbar.appendChild(makeSep());
+      // Interaction mode group: Pan | Zoom | Select (always shown; Select only if onSelect)
+      function setInteractMode(mode: 'pan' | 'zoom' | 'select'): void {
+        interactMode = mode;
+        setActive(btnPanMode,  mode === 'pan');
+        setActive(btnZoomMode, mode === 'zoom');
+        if (btnBoxSelect) setActive(btnBoxSelect, mode === 'select');
+        canvas.style.cursor = mode === 'zoom' || mode === 'select' ? 'crosshair' : 'grab';
       }
+
+      const btnPanMode  = makeBtn('pan',      'Pan (drag to move)',        () => setInteractMode('pan'));
+      const btnZoomMode = makeBtn('zoomMode', 'Zoom (drag to zoom region, scroll to zoom)', () => setInteractMode('zoom'));
+
+      toolbar.appendChild(btnPanMode);
+      toolbar.appendChild(btnZoomMode);
+
+      if (onSelect) {
+        btnBoxSelect = makeBtn('boxSelect', 'Select (drag to select dies)', () => setInteractMode('select'));
+        toolbar.appendChild(btnBoxSelect);
+      }
+
+      toolbar.appendChild(makeSep());
+
+      // Set initial active state — pan is the default
+      setActive(btnPanMode, true);
 
       // Scene controls — hidden in 'view-only' mode (gallery cards use shared gallery bar)
       if (toolbarControls !== 'view-only') {
@@ -628,8 +650,10 @@ export function renderWaferMap(
 
   // ── Pointer events ─────────────────────────────────────────────────────────
   function onWheel(e: WheelEvent): void {
+    // Scroll-wheel zoom only active in zoom mode — prevents accidental zoom while panning.
+    if (interactMode !== 'zoom') return;
     e.preventDefault();
-    const rect  = canvas.getBoundingClientRect();
+    const rect   = canvas.getBoundingClientRect();
     const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
     zoomAt(e.clientX - rect.left, e.clientY - rect.top, factor);
   }
@@ -642,7 +666,7 @@ export function renderWaferMap(
     const rect = canvas.getBoundingClientRect();
     const px   = e.clientX - rect.left;
     const py   = e.clientY - rect.top;
-    if (boxSelectActive) {
+    if (interactMode === 'zoom' || interactMode === 'select') {
       isBoxSelecting = true;
       boxStart = boxEnd = { x: px, y: py };
       return;
@@ -683,7 +707,7 @@ export function renderWaferMap(
     const my  = (vp.originY - cssPy) / vp.ppm;
     const die = hitTest(mx, my, vp.snapDist);
 
-    if (!boxSelectActive) canvas.style.cursor = die ? 'crosshair' : 'grab';
+    if (interactMode === 'pan') canvas.style.cursor = die ? 'crosshair' : 'grab';
 
     if (tooltip) {
       if (die) {
@@ -712,8 +736,44 @@ export function renderWaferMap(
       const dx = cssPx - boxStart.x;
       const dy = cssPy - boxStart.y;
       const vp = currentViewport();
+
+      if (interactMode === 'zoom') {
+        // Zoom mode drag: zoom into the drawn box region.
+        if (dx * dx + dy * dy < 25) {
+          // Tiny drag — treat as step zoom-in at click point.
+          zoomAt(cssPx, cssPy, 2);
+        } else if (vp) {
+          const x1css = Math.min(boxStart.x, boxEnd.x);
+          const x2css = Math.max(boxStart.x, boxEnd.x);
+          const y1css = Math.min(boxStart.y, boxEnd.y);
+          const y2css = Math.max(boxStart.y, boxEnd.y);
+          const boxW  = x2css - x1css;
+          const boxH  = y2css - y1css;
+          if (boxW > 4 && boxH > 4) {
+            const canvasW = canvas.clientWidth;
+            const canvasH = canvas.clientHeight;
+            const scaleX  = canvasW / boxW;
+            const scaleY  = canvasH / boxH;
+            const scale   = Math.min(scaleX, scaleY);
+            const newPpm  = clampedPpm(vp.ppm * scale);
+            const actualScale = newPpm / vp.ppm;
+            const cx    = (x1css + x2css) / 2;
+            const cy    = (y1css + y2css) / 2;
+            viewport = {
+              originX: canvasW / 2 - (cx - vp.originX) * actualScale,
+              originY: canvasH / 2 - (cy - vp.originY) * actualScale,
+              ppm:     newPpm,
+              snapDist: vp.snapDist / actualScale,
+            };
+          }
+        }
+        render();
+        canvas.style.cursor = 'crosshair';
+        return;
+      }
+
+      // Select mode drag.
       if (dx * dx + dy * dy < 25) {
-        // Tiny drag — treat as a click.
         handleClick(cssPx, cssPy, multi, e);
       } else if (vp) {
         const x1mm = (Math.min(boxStart.x, boxEnd.x) - vp.originX) / vp.ppm;
@@ -730,7 +790,6 @@ export function renderWaferMap(
           }
         }
         if (multi) {
-          // Ctrl+box: toggle each die in the box.
           for (const d of boxDies) {
             const key = `${d.i},${d.j}`;
             if (selectedKeys.has(key)) selectedKeys.delete(key);
@@ -748,7 +807,7 @@ export function renderWaferMap(
 
     if (!isPanning) return;
     isPanning = false;
-    canvas.style.cursor = 'grab';
+    canvas.style.cursor = interactMode === 'pan' ? 'grab' : 'crosshair';
     const dx = cssPx - panStart.x;
     const dy = cssPy - panStart.y;
     if (dx * dx + dy * dy < 25) {
@@ -797,7 +856,7 @@ export function renderWaferMap(
   function onPointerLeave(): void {
     if (tooltip) tooltip.style.display = 'none';
     onHover?.(null, new MouseEvent('mouseleave'));
-    if (!boxSelectActive) canvas.style.cursor = 'grab';
+    canvas.style.cursor = interactMode === 'pan' ? 'grab' : 'crosshair';
   }
 
   // ── Hit testing ────────────────────────────────────────────────────────────
