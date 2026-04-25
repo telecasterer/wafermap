@@ -35,7 +35,7 @@ export type DieSample = DieResult;
 export type WaferMapPoint = DieResult;
 
 /** Wafer geometry parameters — all optional; any omitted fields are inferred. */
-export interface WaferConfig {
+export interface WaferOptions {
   /** Wafer diameter in mm.  Inferred from grid extent × pitch when omitted. */
   diameter?: number;
   /**
@@ -64,16 +64,16 @@ export interface WaferConfig {
   edgeExclusion?: number;
 }
 
-/** @deprecated Use {@link WaferConfig} */
-export type WaferOptions = WaferConfig;
-/** @deprecated Use {@link WaferConfig} */
-export type WaferParams = WaferConfig;
+/** @deprecated Use {@link WaferOptions} */
+export type WaferConfig = WaferOptions;
+/** @deprecated Use {@link WaferOptions} */
+export type WaferParams = WaferOptions;
 
 /**
  * Die geometry and coordinate-system parameters — all optional.
  * When omitted, dimensions are estimated from the grid layout.
  */
-export interface DieConfig {
+export interface DieOptions {
   /** Die width in mm (= X pitch). */
   width?: number;
   /** Die height in mm (= Y pitch). */
@@ -110,10 +110,10 @@ export interface DieConfig {
   xAxisDirection?: 'right' | 'left';
 }
 
-/** @deprecated Use {@link DieConfig} */
-export type DieOptions = DieConfig;
-/** @deprecated Use {@link DieConfig} */
-export type DieParams = DieConfig;
+/** @deprecated Use {@link DieOptions} */
+export type DieConfig = DieOptions;
+/** @deprecated Use {@link DieOptions} */
+export type DieParams = DieOptions;
 
 /**
  * Reticle (stepper field) overlay configuration.
@@ -152,9 +152,9 @@ export interface WaferMapInput {
   /** Per-die test results from the prober. */
   results?: DieResult[];
   /** Wafer geometry — diameter, notch direction, orientation, edge exclusion. */
-  waferConfig?: WaferConfig;
+  waferConfig?: WaferOptions;
   /** Die size and coordinate-system conventions. */
-  dieConfig?: DieConfig;
+  dieConfig?: DieOptions;
   /** Pre-built die array.  When supplied, geometry generation is skipped. */
   dies?: Die[];
   /**
@@ -233,8 +233,8 @@ export interface WaferMapResult {
 
 interface Normalized {
   results:      DieResult[];
-  waferOpts:    WaferConfig    | undefined;
-  dieOpts:      DieConfig      | undefined;
+  waferOpts:    WaferOptions    | undefined;
+  dieOpts:      DieOptions      | undefined;
   explicitDies: Die[]          | undefined;
   reticleOpts:  ReticleConfig  | undefined;
   lotStackOpts: LotStackConfig | undefined;
@@ -267,7 +267,7 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
 // ── Notch helper ──────────────────────────────────────────────────────────────
 
 function resolveNotch(
-  waferOpts: WaferConfig | undefined,
+  waferOpts: WaferOptions | undefined,
 ): { type: 'top' | 'bottom' | 'left' | 'right' } | undefined {
   return waferOpts?.notch;
 }
@@ -276,8 +276,8 @@ function resolveNotch(
 
 function detectOrigin(
   results: DieResult[],
-  dieOpts: DieConfig | undefined,
-): NonNullable<DieConfig['coordinateOrigin']> {
+  dieOpts: DieOptions | undefined,
+): NonNullable<DieOptions['coordinateOrigin']> {
   if (dieOpts?.coordinateOrigin) return dieOpts.coordinateOrigin;
   if (results.length > 0 && results.every(p => p.x >= 0 && p.y >= 0)) {
     return { type: 'LL' };
@@ -287,7 +287,7 @@ function detectOrigin(
 
 function resolveGridOriginOffset(
   gridPoints: Array<{ x: number; y: number }>,
-  origin: NonNullable<DieConfig['coordinateOrigin']>,
+  origin: NonNullable<DieOptions['coordinateOrigin']>,
   ga: { offsetX: number; offsetY: number },
 ): { offsetX: number; offsetY: number } {
   if (origin.type === 'custom' && origin.offset) {
@@ -305,8 +305,8 @@ function resolveGridOriginOffset(
 }
 
 function resolveAxisFlips(
-  dieOpts: DieConfig | undefined,
-  origin: NonNullable<DieConfig['coordinateOrigin']>,
+  dieOpts: DieOptions | undefined,
+  origin: NonNullable<DieOptions['coordinateOrigin']>,
 ): { flipX: boolean; flipY: boolean } {
   let flipX = dieOpts?.xAxisDirection === 'left';
   let flipY = dieOpts?.yAxisDirection === 'down';

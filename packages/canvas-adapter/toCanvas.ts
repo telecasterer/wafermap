@@ -6,7 +6,7 @@ import { svgPathToCanvas } from './svgPathToCanvas.js';
 export interface ToCanvasOptions {
   /** Padding in CSS pixels inside the canvas edge. Default 16. */
   padding?: number;
-  /** Draw a continuous colorbar for value/softbin/stackedValues modes. Default true. */
+  /** Draw a continuous colorbar (value modes) or bin legend (bin modes). Default true. */
   showColorbar?: boolean;
   /** Width in CSS pixels of the colorbar strip. Default 16. */
   colorbarWidth?: number;
@@ -26,6 +26,8 @@ export interface ToCanvasOptions {
    * zoom/pan. Also accepts a zoom-adjusted `snapDist` for hit testing.
    */
   _viewport?: ViewportTransform;
+  /** Currently highlighted bin — drawn with an active indicator in the bin legend. */
+  _activeBin?: number;
 }
 
 /** Internal viewport state shared between toCanvas and mountWaferCanvas. */
@@ -41,17 +43,32 @@ export interface CanvasHitTarget {
   getDieAtPoint(x: number, y: number): Die | null;
 }
 
-export interface ToCanvasResult {
-  hitTarget:  CanvasHitTarget;
-  /** The fitted viewport — useful as initial state for mountWaferCanvas. */
-  viewport:   ViewportTransform;
+/** A hit-testable row in the bin legend — one entry per unique bin. */
+export interface BinLegendRow {
+  bin: number;
+  /** Top CSS-pixel of the row (relative to canvas). */
+  y:   number;
+  /** Height in CSS pixels of the row. */
+  h:   number;
 }
 
-const COLORBAR_MODES = new Set(['value', 'softbin', 'stackedValues']);
+export interface ToCanvasResult {
+  hitTarget:      CanvasHitTarget;
+  /** The fitted viewport — useful as initial state for mountWaferCanvas. */
+  viewport:       ViewportTransform;
+  /** Non-empty only when a bin legend was drawn (hardbin / stackedBins modes). */
+  binLegendRows:  BinLegendRow[];
+}
+
+const COLORBAR_MODES   = new Set(['value', 'softbin', 'stackedValues']);
+const BIN_LEGEND_MODES = new Set(['hardbin', 'stackedBins']);
 const COLORBAR_LABEL_FONT = '10px system-ui, sans-serif';
 const COLORBAR_STEPS = 128;
 const AXIS_TICK_FONT  = '10px system-ui, sans-serif';
 const AXIS_TICK_LEN   = 4;  // px
+const BIN_ROW_H       = 17; // px per legend row
+const BIN_SWATCH_SIZE = 11; // px
+const BIN_LEGEND_W    = 68; // px total right-side reserve for bin legend
 
 export function toCanvas(
   canvas: HTMLCanvasElement,
@@ -66,9 +83,11 @@ export function toCanvas(
     showAxes      = false,
     diePitchMm,
     _viewport,
+    _activeBin,
   } = options;
 
-  const drawColorbar = showColorbar && COLORBAR_MODES.has(scene.plotMode);
+  const drawColorbar   = showColorbar && COLORBAR_MODES.has(scene.plotMode);
+  const drawBinLegend  = showColorbar && BIN_LEGEND_MODES.has(scene.plotMode);
 
   // ── HiDPI setup ────────────────────────────────────────────────────────────
   const dpr     = window.devicePixelRatio ?? 1;
@@ -88,7 +107,7 @@ export function toCanvas(
   const pts = scene.hoverPoints;
   if (!pts.length) {
     const vp: ViewportTransform = { originX: 0, originY: 0, ppm: 1, snapDist: 1 };
-    return { hitTarget: { getDieAtPoint: () => null }, viewport: vp };
+    return { hitTarget: { getDieAtPoint: () => null }, viewport: vp, binLegendRows: [] };
   }
 
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -108,7 +127,7 @@ export function toCanvas(
   const dataH = maxY - minY;
 
   // ── Viewport transform ─────────────────────────────────────────────────────
-  const colorbarReserve = drawColorbar ? colorbarWidth + 28 : 0;
+  const colorbarReserve = drawColorbar ? colorbarWidth + 28 : drawBinLegend ? BIN_LEGEND_W : 0;
   const axisReserve     = showAxes ? 32 : 0;
   const drawW = cssW - 2 * padding - colorbarReserve;
   const drawH = cssH - 2 * padding - axisReserve;
@@ -246,6 +265,76 @@ export function toCanvas(
     ctx.fillText(fmt(vMin), cbX + colorbarWidth + tickLen + 2, cbY + cbH);
   }
 
+  // ── Draw bin legend ────────────────────────────────────────────────────────
+  const binLegendRows: BinLegendRow[] = [];
+
+  if (drawBinLegend) {
+    const scheme = getColorScheme(scene.colorScheme);
+
+    // Collect unique bins from all channels (stackedBins uses all bins[]).
+    const binCounts = new Map<number, number>();
+    for (const die of scene.dies) {
+      if (die.partial) continue;
+      const channels = die.bins?.length ? die.bins : [0];
+      for (const bin of channels) {
+        binCounts.set(bin, (binCounts.get(bin) ?? 0) + 1);
+      }
+    }
+    const entries = [...binCounts.entries()].sort(([a], [b]) => a - b);
+
+    const legendX    = cssW - padding - BIN_LEGEND_W + 4;
+    const swatchX    = legendX;
+    const labelX     = legendX + BIN_SWATCH_SIZE + 5;
+    const maxRows    = Math.floor((cssH - 2 * padding) / BIN_ROW_H);
+    const overflow   = entries.length > maxRows ? entries.length - (maxRows - 1) : 0;
+    const visible    = overflow > 0 ? entries.slice(0, maxRows - 1) : entries;
+    let rowY         = padding + Math.round((cssH - 2 * padding - Math.min(entries.length, maxRows) * BIN_ROW_H) / 2);
+
+    ctx.save();
+    ctx.font = COLORBAR_LABEL_FONT;
+
+    for (const [bin, count] of visible) {
+      const isActive = _activeBin === bin;
+      const swatchY  = rowY + Math.round((BIN_ROW_H - BIN_SWATCH_SIZE) / 2);
+
+      // Swatch fill.
+      ctx.fillStyle = scheme.forBin(bin);
+      ctx.fillRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
+
+      // Swatch border — thicker + dark when active.
+      ctx.strokeStyle = isActive ? '#1a66cc' : 'rgba(0,0,0,0.25)';
+      ctx.lineWidth   = isActive ? 2 : 0.75;
+      ctx.strokeRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
+
+      // Label.
+      ctx.fillStyle    = isActive ? '#1a66cc' : '#333';
+      ctx.font         = isActive ? 'bold 10px system-ui, sans-serif' : COLORBAR_LABEL_FONT;
+      ctx.textAlign    = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`Bin ${bin}`, labelX, rowY + BIN_ROW_H / 2);
+
+      // Die count (muted, right-aligned within label space).
+      ctx.fillStyle    = '#999';
+      ctx.font         = COLORBAR_LABEL_FONT;
+      ctx.textAlign    = 'right';
+      ctx.fillText(String(count), cssW - padding + 2, rowY + BIN_ROW_H / 2);
+
+      binLegendRows.push({ bin, y: rowY, h: BIN_ROW_H });
+      rowY += BIN_ROW_H;
+    }
+
+    // Overflow indicator.
+    if (overflow > 0) {
+      ctx.fillStyle    = '#aaa';
+      ctx.font         = COLORBAR_LABEL_FONT;
+      ctx.textAlign    = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`+ ${overflow} more`, labelX, rowY + BIN_ROW_H / 2);
+    }
+
+    ctx.restore();
+  }
+
   // ── Build viewport and hit target ──────────────────────────────────────────
   const viewport: ViewportTransform = { originX, originY, ppm, snapDist };
 
@@ -270,7 +359,7 @@ export function toCanvas(
     },
   };
 
-  return { hitTarget, viewport };
+  return { hitTarget, viewport, binLegendRows };
 }
 
 // ── Axis tick rendering ────────────────────────────────────────────────────────

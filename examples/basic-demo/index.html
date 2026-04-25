@@ -4,8 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>wafermap — Manual Pipeline</title>
-  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-  <script type="importmap">{ "imports": { "wafermap": "../../dist/index.js" } }</script>
+  <script type="importmap">{ "imports": {
+    "wafermap": "../../dist/index.js",
+    "wafermap/canvas-adapter": "../../dist/packages/canvas-adapter/index.js"
+  } }</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -413,7 +415,7 @@
 <div id="main">
 
   <div id="chart-wrap">
-    <div id="chart"></div>
+    <canvas id="chart"></canvas>
   </div>
 
   <aside id="side">

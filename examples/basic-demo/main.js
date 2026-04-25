@@ -11,8 +11,8 @@ import {
   getColorScheme,
   listColorSchemes,
   buildScene,
-  toPlotly,
 } from 'wafermap';
+import { toCanvas } from 'wafermap/canvas-adapter';
 
 const DIE_SIZE = { width: 10, height: 10 };
 const WAFER_DIAMETER = 150;
@@ -165,8 +165,7 @@ function redraw() {
     interactiveTransform,
   });
 
-  const { data, layout } = toPlotly(scene);
-  Plotly.react('chart', data, layout, { responsive: true });
+  toCanvas(document.getElementById('chart'), scene);
   updateUI();
 }
 

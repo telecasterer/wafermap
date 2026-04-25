@@ -3,7 +3,7 @@ import { buildScene } from '../renderer/buildScene.js';
 import { listColorSchemes } from '../renderer/colorSchemes.js';
 import type { Wafer } from '../core/wafer.js';
 import type { Die } from '../core/dies.js';
-import { toCanvas, type ToCanvasOptions, type ViewportTransform } from './toCanvas.js';
+import { toCanvas, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -174,6 +174,7 @@ export function renderWaferMap(
   let currentScene:   Scene;
   let fittedViewport: ViewportTransform | null = null;
   let viewport:       ViewportTransform | null = null;
+  let binLegendRows:  BinLegendRow[] = [];
   let isPanning       = false;
   let isBoxSelecting  = false;
   // Interaction mode: 'pan' | 'zoom' | 'select'
@@ -544,9 +545,12 @@ export function renderWaferMap(
     const vp = viewport ?? undefined;
     const result = toCanvas(canvas, currentScene, {
       ...drawOptions,
-      showAxes: drawOptions.showAxes ?? (viewport !== null),
+      showAxes:  drawOptions.showAxes ?? (viewport !== null),
       _viewport: vp,
+      _activeBin: sceneOpts.highlightBin,
     });
+
+    binLegendRows = result.binLegendRows;
 
     if (!fittedViewport || !viewport) {
       fittedViewport = result.viewport;
@@ -824,6 +828,15 @@ export function renderWaferMap(
   }
 
   function handleClick(cssPx: number, cssPy: number, multi: boolean, e: PointerEvent): void {
+    // Check bin legend hit first — legend rows take priority over die clicks.
+    for (const row of binLegendRows) {
+      if (cssPy >= row.y && cssPy < row.y + row.h) {
+        const next = sceneOpts.highlightBin === row.bin ? undefined : row.bin;
+        applyOpts({ highlightBin: next });
+        return;
+      }
+    }
+
     const vp = currentViewport();
     if (!vp) return;
     const die = hitTest((cssPx - vp.originX) / vp.ppm, (vp.originY - cssPy) / vp.ppm, vp.snapDist);

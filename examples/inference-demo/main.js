@@ -1,4 +1,5 @@
-import { buildWaferMap, toPlotly } from 'wafermap';
+import { buildWaferMap } from 'wafermap';
+import { renderWaferMap } from 'wafermap/canvas-adapter';
 
 async function loadCsv(path) {
   const text = await (await fetch(path)).text();
@@ -12,14 +13,12 @@ async function loadCsv(path) {
 
 // ── Render a single panel ─────────────────────────────────────────────────────
 
-function renderPanel(chartId, bodyId, result, provided) {
-  const { wafer, dies, scene, inference, units } = result;
+function renderPanel(canvasId, bodyId, result, provided) {
+  const { wafer, dies, inference, units } = result;
 
-  const { data, layout } = toPlotly(scene);
-  Plotly.react(chartId, data, {
-    ...layout,
-    margin: { t: 6, l: 6, r: 44, b: 6 },
-  }, { responsive: true });
+  renderWaferMap(document.getElementById(canvasId), wafer, dies, {
+    sceneOptions: { plotMode: 'value', showRingBoundaries: true },
+  });
 
   const dieW  = dies[0]?.width  ?? '—';
   const dieH  = dies[0]?.height ?? '—';

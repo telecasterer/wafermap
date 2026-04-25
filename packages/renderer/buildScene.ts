@@ -636,7 +636,7 @@ export function buildScene(
   const transform = normalizeTransform(wafer, interactiveTransform);
 
   // Cap the visual kerf gap at 12 % of the smallest die dimension so that
-  // normalised-unit scenes (die pitch ≈ 1) remain visible. No effect for
+  // normalized-unit scenes (die pitch ≈ 1) remain visible. No effect for
   // standard 10 mm dies: min(1, 10 × 0.12 = 1.2) = 1.
   const minDim = dies.reduce((m, d) => Math.min(m, d.width, d.height), Infinity);
   const gap = Number.isFinite(minDim) ? Math.min(dieGap, minDim * 0.12) : dieGap;

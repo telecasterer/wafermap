@@ -12,7 +12,7 @@ export interface ColorScheme {
   forBin: (bin: number) => string;
   /**
    * Return a CSS colour string for a continuous value t ∈ [0, 1].
-   * Values are pre-normalised by buildScene before this is called.
+   * Values are pre-normalized by buildScene before this is called.
    */
   forValue: (t: number) => string;
   /**

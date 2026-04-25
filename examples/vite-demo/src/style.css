@@ -48,7 +48,7 @@ body {
 
 .hero h1 {
   margin: 0 0 8px;
-  font-size: clamp(2rem, 4vw, 3.2rem);
+  font-size: clamp(1.6rem, 4vw, 3.2rem);
   line-height: 1;
 }
 
@@ -94,11 +94,13 @@ body {
 
 .chart-card {
   padding: 8px;
-  min-height: 720px;
+  aspect-ratio: 1;
 }
 
-#chart {
-  min-height: 700px;
+.chart-card canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .meta-card {
@@ -131,13 +133,5 @@ body {
 @media (max-width: 980px) {
   .layout {
     grid-template-columns: 1fr;
-  }
-
-  .chart-card {
-    min-height: 560px;
-  }
-
-  #chart {
-    min-height: 540px;
   }
 }

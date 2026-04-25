@@ -157,7 +157,7 @@ export function resolveGridPitch(
 
   // Case 5: Nothing provided — attempt nearest-neighbour step analysis first.
   // This yields integer step sizes (e.g. pitchX=1, pitchY=1 for a 1-step grid)
-  // in normalised units; the physical scale is still unknown but the aspect
+  // in normalized units; the physical scale is still unknown but the aspect
   // ratio is more robust than the circular constraint for sparse/non-circular data.
   const nn = computeNearestNeighborPitch(gridPoints);
   if (nn !== null) {

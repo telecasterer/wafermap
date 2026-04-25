@@ -2,16 +2,6 @@
 
 This document describes the public API exposed by `wafermap`.
 
-The public package surface is exported from:
-
-- `@paulrobins/wafermap`
-- `@paulrobins/wafermap/core`
-- `@paulrobins/wafermap/renderer`
-- `@paulrobins/wafermap/plotly-adapter`
-- `@paulrobins/wafermap/worker` — `createWafermapWorker()`
-- `@paulrobins/wafermap/worker-script` — the worker script itself (for bundler `?url` imports)
-- `@paulrobins/wafermap/canvas-adapter` — `renderWaferMap()`, `renderWaferGallery()`, `toCanvas()` — interactive canvas renderer, no Plotly required
-
 ---
 
 ## Coordinate system
@@ -32,29 +22,48 @@ Physical mm positions appear only on the `Die` output objects (`die.x`, `die.y`)
 ## Quick Start
 
 ```ts
-import { buildWaferMap, toPlotly } from '@paulrobins/wafermap';
+import { buildWaferMap } from '@paulrobins/wafermap';
+import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 
 // x,y are prober step positions (die grid indices), not mm.
-const result = buildWaferMap([
-  { x: 0,  y:  0, values: [0.95] },
-  { x: 1,  y:  0, values: [0.87] },
-  { x: -1, y:  1, values: [0.91] },
-]);
+const { wafer, dies } = buildWaferMap({
+  results:   rows.map(r => ({ x: +r.x, y: +r.y, bins: [+r.hbin], values: [+r.testA] })),
+  waferConfig: { diameter: 300, notch: { type: 'bottom' } },
+  dieConfig:   { width: 10, height: 10 },
+});
 
-const { data, layout } = toPlotly(result.scene);
-Plotly.react('chart', data, layout);
+renderWaferMap(document.getElementById('map'), wafer, dies);
+```
+
+The map renders with a full built-in toolbar — no extra HTML or JavaScript needed.
+
+---
+
+## API overview
+
+```text
+buildWaferMap()            — data layer: prober results → wafer + dies (server-safe, no DOM)
+    │
+    ├── renderWaferMap()       — single interactive canvas map with full toolbar  ← recommended
+    ├── renderWaferGallery()   — multi-map gallery with shared controls + click-to-modal  ← recommended
+    │
+    ├── toPlotly()             — Plotly SVG renderer (lower-level, bring your own Plotly CDN)
+    └── toCanvas()             — direct canvas render without toolbar (lower-level)
 ```
 
 ---
 
-## `buildWaferMap(input, options?)`
+## `buildWaferMap(input)`
 
 The primary entry point.  Pass whatever data you have — prober step positions,
 optional geometry hints, or a pre-built die array.  The function infers whatever
-is missing and returns a fully constructed scene.
+is missing and returns a fully constructed wafer model.
+
+**Server-safe:** `buildWaferMap` is a pure function with no DOM access or side
+effects.  It can run in Node.js, Deno, a Web Worker, or any server-side environment.
 
 ```ts
-import { buildWaferMap } from 'wafermap';
+import { buildWaferMap } from '@paulrobins/wafermap';
 ```
 
 ### Input
@@ -67,13 +76,13 @@ buildWaferMap(results: DieResult[])
 
 // Object form — with optional geometry hints
 buildWaferMap({
-  results?:   DieResult[],      // per-die measurements from the prober
-  waferConfig?:   WaferConfig,    // physical wafer geometry (diameter, notch, orientation…)
-  dieConfig?:     DieConfig,      // die size and coordinate conventions
-  dies?:          Die[],          // pre-built die array; skips geometry generation
-  reticleConfig?: ReticleConfig,  // stepper field grid overlay
-  lotStack?:  LotStackConfig,   // collapse multiple wafers into one aggregated map
-  passBins?:  number[],         // bins counted as pass for yield (default [1])
+  results?:      DieResult[],      // per-die measurements from the prober
+  waferConfig?:  WaferOptions,     // physical wafer geometry (diameter, notch, orientation…)
+  dieConfig?:    DieOptions,       // die size and coordinate conventions
+  dies?:         Die[],            // pre-built die array; skips geometry generation
+  reticleConfig?: ReticleConfig,   // stepper field grid overlay
+  lotStack?:     LotStackConfig,   // collapse multiple wafers into one aggregated map
+  passBins?:     number[],         // bins counted as pass for yield (default [1])
 })
 ```
 
@@ -94,7 +103,7 @@ A single die record from wafer test equipment.
 
 Single-channel data is just `values: [0.95]` — an array with one element.
 
-#### `WaferConfig`
+#### `WaferOptions`
 
 ```ts
 {
@@ -112,7 +121,9 @@ Single-channel data is just `values: [0.95]` — an array with one element.
 
 **`orientation` note:** positive values rotate the die grid counter-clockwise (standard mathematical convention).  The notch/flat position is controlled by `notch.type` and is **not** affected by `orientation` — it stays fixed as the physical alignment mark.
 
-#### `DieConfig`
+> **Deprecated names:** `WaferConfig` and `WaferParams` are aliases for `WaferOptions` and will be removed in a future release.
+
+#### `DieOptions`
 
 ```ts
 {
@@ -136,6 +147,8 @@ Single-channel data is just `values: [0.95]` — an array with one element.
 When `width` and `height` are omitted, the library estimates die dimensions from
 the grid layout using nearest-neighbour step analysis first, falling back to the
 circular-wafer aspect-ratio constraint.
+
+> **Deprecated names:** `DieConfig` and `DieParams` are aliases for `DieOptions` and will be removed in a future release.
 
 #### `ReticleConfig`
 
@@ -179,30 +192,13 @@ passBins?: number[]   // default [1]  (industry convention: bin 1 = pass)
 
 Bin values that count as pass for yield calculation.  Set to `[]` to suppress yield.
 
-### Options
-
-All [`SceneOptions`](#buildscenewafer-dies-options) fields are supported, plus:
-
-```ts
-{
-  plotMode?: // how die colour is determined — auto-detected when omitted:
-    | 'value'          // colour each die by values[0] on a continuous gradient
-    | 'hardbin'        // colour each die by bins[0] using categorical bin colours
-    | 'softbin'        // colour each die by bins[0] on a gradient scaled to max bin
-    | 'stackedValues'  // split each die into N vertical bands, one per values[] channel
-    | 'stackedBins'    // split each die into N vertical bands, one per bins[] channel
-             // auto-detected: 'value' when any point has values, else 'hardbin'
-  debug?: boolean   // emit internal timing and inference diagnostics to the console
-}
-```
-
 ### Return value
 
 ```ts
 {
   wafer:   Wafer    // resolved wafer model (diameter, radius, center, notch, orientation)
   dies:    Die[]    // all dies inside the wafer boundary, with values/bins attached
-  scene:   Scene    // renderer-agnostic scene — pass directly to toPlotly()
+  scene:   Scene    // renderer-agnostic scene — pass directly to toPlotly() if needed
   units:   'mm' | 'normalized'   // coordinate space of die.x/die.y and wafer dimensions
   inference: {
     wafer:    { confidence: number; method: string }   // how diameter was resolved; confidence 0–1
@@ -239,9 +235,6 @@ Partial dies and edge-excluded dies are excluded from both numerator and denomin
 - `'mm'` — at least one physical dimension was known (die size or wafer diameter); all spatial values are in real-world millimetres.
 - `'normalized'` — only grid positions were supplied; coordinates are proportionally correct (aspect ratio preserved) but not in physical mm.  `pitchX = 1` normalized unit by convention.
 
-**`inference.confidence`** runs from 0 (pure default) to 1 (fully determined).
-**`inference.wafer.method`** describes how diameter was resolved: `'snapped-300mm'`, `'rounded'`, `'provided'`, `'default'`, etc.
-
 ### Inference levels
 
 The library adapts to whatever geometry context you provide.  Four distinct levels:
@@ -266,7 +259,7 @@ automatically infers lower-left (`'LL'`) origin and centres the grid for display
 **Minimal — grid positions only (normalized units):**
 
 ```ts
-const result = buildWaferMap([
+const { wafer, dies } = buildWaferMap([
   { x: 0, y:  0, values: [0.95] },
   { x: 1, y:  0, values: [0.87] },
   { x: 0, y: -1, values: [0.91] },
@@ -277,7 +270,7 @@ const result = buildWaferMap([
 **With die size — physical mm coordinates:**
 
 ```ts
-const result = buildWaferMap({
+const { wafer, dies } = buildWaferMap({
   results:   data,
   dieConfig: { width: 10, height: 10 },
 });
@@ -287,7 +280,7 @@ const result = buildWaferMap({
 **Fully specified with notch:**
 
 ```ts
-const result = buildWaferMap({
+const { wafer, dies } = buildWaferMap({
   results:     data,
   waferConfig: { diameter: 300, notch: { type: 'bottom' }, orientation: 90 },
   dieConfig:   { width: 10, height: 10 },
@@ -297,18 +290,18 @@ const result = buildWaferMap({
 **With bin data and edge exclusion:**
 
 ```ts
-const result = buildWaferMap({
+const { wafer, dies, yield: yld } = buildWaferMap({
   results:     csvRows.map(r => ({ x: Number(r.x), y: Number(r.y), bins: [Number(r.hbin)] })),
   waferConfig: { diameter: 200, edgeExclusion: 3 },
   dieConfig:   { width: 8, height: 8 },
 });
-const { yieldPercent } = result.yield;
+console.log(yld.yieldPercent);
 ```
 
 **Multi-channel input — values and bins in a single pass:**
 
 ```ts
-const result = buildWaferMap({
+const { wafer, dies } = buildWaferMap({
   results: rows.map(r => ({
     x: +r.x, y: +r.y,
     values: [+r.testA, +r.testB, +r.testC],
@@ -321,7 +314,7 @@ const result = buildWaferMap({
 **Reticle overlay phased to die (2, 1):**
 
 ```ts
-const result = buildWaferMap({
+const { wafer, dies } = buildWaferMap({
   results:   data,
   dieConfig: { width: 10, height: 10 },
   reticleConfig: { width: 4, height: 2, anchorDie: { x: 2, y: 1 } },
@@ -331,10 +324,10 @@ const result = buildWaferMap({
 **Multi-wafer lot stack — count bin 2 failures across six wafers:**
 
 ```ts
-const result = buildWaferMap({
+const { wafer, dies } = buildWaferMap({
   waferConfig: { diameter: 300 },
   dieConfig:   { width: 10, height: 10 },
-  lotStack:  {
+  lotStack: {
     results:   [wafer1, wafer2, wafer3, wafer4, wafer5, wafer6],
     method:    'countBin',
     targetBin: 2,
@@ -345,174 +338,36 @@ const result = buildWaferMap({
 **Row-based prober (y increases downward, origin at upper-left):**
 
 ```ts
-const result = buildWaferMap({
+const { wafer, dies } = buildWaferMap({
   results:   data,
   dieConfig: { width: 10, height: 10, coordinateOrigin: { type: 'UL' } },
 });
 ```
 
-**Connecting to Plotly with click drill-down:**
-
-```ts
-import { buildWaferMap, toPlotly, getDieAtPoint } from 'wafermap';
-
-const result = buildWaferMap({ results: data, dieConfig: { width: 10, height: 10 } });
-const { data: traces, layout } = toPlotly(result.scene);
-Plotly.react('chart', traces, layout);
-
-document.getElementById('chart').on('plotly_click', (ev) => {
-  const die = getDieAtPoint(result.scene, ev);
-  if (die) console.log(die.i, die.j, die.values, die.bins);
-});
-```
-
-### Post-enrichment (advanced)
+### Post-enrichment
 
 When you need to attach additional channels after the map is built, use `getDieKey`
 for stable lookups:
 
 ```ts
-import { buildWaferMap, getDieKey } from 'wafermap';
+import { buildWaferMap, getDieKey } from '@paulrobins/wafermap';
 
 const result = buildWaferMap({ results: primaryData, waferConfig, dieConfig });
 
-const rowMap = new Map(rows.map(r => [getDieKey({ i: r.x, j: r.y }), r]));
-const dies = result.dies.map(d => {
+const rowMap = new Map(rows.map(r => [getDieKey({ i: +r.x, j: +r.y }), r]));
+const enrichedDies = result.dies.map(d => {
   const row = rowMap.get(getDieKey(d));
   if (!row) return d;
   return {
     ...d,
-    values: [Number(row.testA), Number(row.testB), Number(row.testC)],
-    bins:   [Number(row.hbin), Number(row.sbin)],
+    values: [+row.testA, +row.testB, +row.testC],
+    bins:   [+row.hbin, +row.sbin],
   };
 });
-// Pass enriched `dies` to buildScene().
 ```
 
-For non-centred grids (grid offset ≠ 0), the reverse mapping is
-`origX = die.i + offsetX` where `offsetX = Math.round(mean of all input x values)`.
-
----
-
-## `toPlotly(scene, options?)`
-
-Converts a scene into Plotly-compatible `{ data, layout }`.
-
-```ts
-interface ToPlotlyOptions {
-  showAxes?:          boolean                    // show X/Y axis tick marks and labels (default false)
-  showPhysicalUnits?: boolean                    // append "(mm)" to axis titles and show raw mm tick values (default false)
-  showColorbar?:      boolean                    // show the continuous-value colorbar (default true); set false to suppress
-  diePitchMm?:        { x: number; y: number }  // die pitch in mm; axis ticks show die grid indices when provided
-  axisLabels?:        { x?: string; y?: string } // custom axis title strings
-}
-```
-
-Behaviour:
-
-- Die rectangles → `layout.shapes` paths at `layer: 'below'`
-- Overlays → `layout.shapes` paths at `layer: 'above'`
-- Hover → invisible scatter trace (one point per die, indexed parallel to `scene.dies`)
-- Text labels → scatter text trace (when `scene.texts.length > 0`)
-- Continuous modes (`value`, `softbin`, `stackedValues`) → reference colorbar trace (suppressed when `showColorbar: false`)
-
----
-
-## `toCanvas(canvas, scene, options?)`
-
-Renders a scene directly onto an HTML `<canvas>` element using the 2D Canvas API.
-No SVG DOM nodes are created — each die is a canvas fill call — so this adapter
-handles large wafer galleries (25+ wafers, 600+ dies each) without UI freezing.
-
-Use this adapter when rendering speed matters.  Use `toPlotly` when you need
-Plotly's built-in zoom, pan, and axis controls.
-
-```ts
-import { toCanvas } from '@paulrobins/wafermap/canvas-adapter';
-```
-
-### `ToCanvasOptions`
-
-```ts
-interface ToCanvasOptions {
-  padding?:      number   // CSS-px padding inside canvas edge (default 16)
-  showColorbar?: boolean  // draw colorbar for value/softbin/stackedValues modes (default true)
-  colorbarWidth?: number  // CSS-px width of the colorbar strip (default 16)
-  background?:   string   // canvas background colour (default '#f5f5f5')
-}
-```
-
-### `ToCanvasResult`
-
-```ts
-interface ToCanvasResult {
-  hitTarget: CanvasHitTarget
-}
-
-interface CanvasHitTarget {
-  getDieAtPoint(x: number, y: number): Die | null
-}
-```
-
-`hitTarget.getDieAtPoint(x, y)` takes CSS-pixel coordinates relative to the
-canvas element and returns the die at that position, or `null`.
-
-### Usage
-
-```ts
-import { buildWaferMap, buildScene } from '@paulrobins/wafermap';
-import { toCanvas } from '@paulrobins/wafermap/canvas-adapter';
-
-const result = buildWaferMap({ results, waferConfig, dieConfig });
-const scene  = buildScene(result.wafer, result.dies, { plotMode: 'hardbin' });
-
-const canvas = document.getElementById('my-canvas');
-const { hitTarget } = toCanvas(canvas, scene);
-
-// Hover tooltip
-canvas.addEventListener('mousemove', e => {
-  const r   = canvas.getBoundingClientRect();
-  const die = hitTarget.getDieAtPoint(e.clientX - r.left, e.clientY - r.top);
-  if (die) showTooltip(die);
-  else     hideTooltip();
-});
-
-// Click drill-down
-canvas.addEventListener('click', e => {
-  const r   = canvas.getBoundingClientRect();
-  const die = hitTarget.getDieAtPoint(e.clientX - r.left, e.clientY - r.top);
-  if (die) console.log(die.i, die.j, die.values, die.bins);
-});
-```
-
-### HiDPI / retina
-
-`toCanvas` reads `window.devicePixelRatio` automatically and scales the canvas
-backing store accordingly.  Set the canvas size in CSS only — do not set
-`canvas.width` / `canvas.height` before calling `toCanvas`.
-
-```html
-<canvas id="wafer" style="width: 300px; height: 300px;"></canvas>
-```
-
----
-
-## Canvas adapter API hierarchy
-
-The canvas adapter has three levels — choose the one that matches your use case:
-
-| Function | Use when |
-| --- | --- |
-| `buildWaferMap` | You need the data model: wafer geometry, die positions, yield |
-| `renderWaferMap` | You want a single interactive map with a full toolbar |
-| `renderWaferGallery` | You want a grid of maps with shared controls and click-to-detail |
-| `toCanvas` | You are building a custom gallery or need direct scene rendering |
-
-```ts
-import { renderWaferMap, renderWaferGallery, toCanvas } from '@paulrobins/wafermap/canvas-adapter';
-```
-
-> `mountWaferCanvas` is a deprecated alias for `renderWaferMap` and will be removed in a future release.
+> **`getDieKey`** always use this for stable die lookups rather than ad-hoc template
+> literals — it guarantees a consistent `"i,j"` format across grid offset corrections.
 
 ---
 
@@ -525,6 +380,10 @@ hover — wafermap-specific controls always in the same place.
 The toolbar gives users direct access to every display option without any app-level
 chrome: plot mode, colour scheme, ring and quadrant overlays, die labels, rotate,
 flip, zoom, box-select, and PNG download.
+
+```ts
+import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+```
 
 ### `WaferSceneOptions`
 
@@ -547,7 +406,7 @@ Scene display options controllable via the toolbar or programmatically:
 
 ### `MountOptions`
 
-All `ToCanvasOptions` fields (padding, background, showAxes, etc.) are accepted, plus:
+All `ToCanvasOptions` fields (padding, background, etc.) are accepted, plus:
 
 ```ts
 {
@@ -584,6 +443,13 @@ The box-select toolbar button only appears when `onSelect` is provided.
 
 | Button | Action |
 | --- | --- |
+| Camera | Export current view as PNG |
+| Zoom region | Drag to draw a zoom rectangle |
+| Pan | Drag to pan the map (default mode) |
+| Box select | Draw selection rectangle — only shown when `onSelect` is provided |
+| Zoom + | Zoom in centred on canvas |
+| Zoom − | Zoom out centred on canvas |
+| Reset | Return to fitted view (also: double-click canvas) |
 | Mode | Dropdown: Value / Hard Bin / Soft Bin / Stacked Values / Stacked Bins |
 | Palette | Dropdown: all registered colour schemes |
 | Rings | Toggle ring boundary overlay |
@@ -592,24 +458,26 @@ The box-select toolbar button only appears when `onSelect` is provided.
 | Rotate | Rotate 90° clockwise (cycles 0→90→180→270) |
 | Flip H | Mirror horizontally |
 | Flip V | Mirror vertically |
-| Box select | Draw selection rectangle — only shown when `onSelect` is provided |
-| Zoom +/− | Zoom in/out centred on canvas |
-| Reset | Return to fitted view (also: double-click) |
-| Download | Export current view as PNG |
 
 ### Interactions
 
-| Gesture | Action |
-| --- | --- |
-| Scroll wheel | Zoom in/out centred on cursor |
-| Click + drag | Pan |
-| Click on die | `onClick` callback; selects die if `onSelect` provided |
-| Ctrl/Cmd+click | Toggle die in selection |
-| Drag (no mode) | Box-select dies |
-| Ctrl+drag | Toggle-select dies in box |
-| Hover over die | Tooltip + `onHover` callback |
-| Double-click | Reset to fitted view |
-| Esc | Clear selection |
+| Gesture | Mode | Action |
+| --- | --- | --- |
+| Scroll wheel | Zoom mode | Zoom in/out centred on cursor |
+| Drag | Pan mode (default) | Pan the map |
+| Drag | Zoom mode | Draw zoom rectangle |
+| Drag | Select mode | Box-select dies |
+| Click on die | Any | `onClick` callback; selects die if `onSelect` provided |
+| Ctrl/Cmd+click | Any | Toggle die in/out of selection |
+| Ctrl/Cmd+drag | Select mode | Additive box-select |
+| Hover over die | Any | Tooltip + `onHover` callback |
+| Click bin legend entry | Any | Toggle `highlightBin` — dims all non-matching bins |
+| Double-click | Any | Reset to fitted view |
+| Esc | Any | Clear selection |
+
+> **Note:** zoom/rotate/flip are visual-only transforms — they never mutate the
+> underlying `Die` data.  Selection stability is guaranteed: `die.i` and `die.j`
+> remain unchanged regardless of display orientation.
 
 ### Example
 
@@ -617,9 +485,9 @@ The box-select toolbar button only appears when `onSelect` is provided.
 import { buildWaferMap } from '@paulrobins/wafermap';
 import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 
-const result = buildWaferMap({ results, waferConfig, dieConfig });
+const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig });
 
-const ctrl = renderWaferMap(canvas, result.wafer, result.dies, {
+const ctrl = renderWaferMap(canvas, wafer, dies, {
   sceneOptions: { plotMode: 'hardbin', colorScheme: 'color' },
   onClick:  (die)  => console.log(die.i, die.j, die.bins),
   onSelect: (dies) => console.log(`Selected ${dies.length} dies`),
@@ -643,6 +511,10 @@ ctrl.destroy();
 A multi-map gallery with a shared control bar, per-card view-only toolbars, and
 click-to-detail modal. All cards stay in sync — changing mode, colour, rotate, or
 flip in the gallery bar applies to every card instantly.
+
+```ts
+import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
+```
 
 ### `GalleryItem`
 
@@ -678,7 +550,7 @@ flip in the gallery bar applies to every card instantly.
 }
 ```
 
-### Gallery control bar buttons
+### Gallery control bar
 
 | Button | Action |
 | --- | --- |
@@ -701,6 +573,19 @@ Clicking anywhere on a card (outside its toolbar) opens a full-screen modal with
 scene options are passed through so the modal opens in the same display state as
 the gallery. Close with Esc, the × button, or clicking the backdrop.
 
+### Shared bin legend
+
+For `hardbin`, `softbin`, and `stackedBins` modes a shared legend strip is rendered
+between the control bar and the card grid — one coloured swatch + `Bin N` label per
+unique bin across all items. The legend is hidden for `value` and `stackedValues`
+(those modes use a per-card colorbar instead).
+
+Clicking a bin entry calls `setOptions({ highlightBin: bin })`, which dims all
+non-matching bins on every card simultaneously. Clicking the active entry clears
+the highlight. The active entry is indicated with a bold label and a blue swatch
+border. The legend rebuilds automatically whenever the mode, colour scheme, or
+highlight changes.
+
 ### Example
 
 ```ts
@@ -715,8 +600,7 @@ const items = waferIds.map(id => ({
   onSelect: (selected) => showSelectionPanel(id, selected),
 }));
 
-const galleryEl = document.getElementById('gallery');
-const ctrl = renderWaferGallery(galleryEl, items, {
+const ctrl = renderWaferGallery(document.getElementById('gallery'), items, {
   sceneOptions: { plotMode: 'hardbin', colorScheme: 'color' },
   onSceneOptionsChange: (opts) => syncSidebarControls(opts),
   downloadFilename: 'lot-overview',
@@ -741,7 +625,7 @@ UI responsive.  The `wafermap/worker` subpackage provides a thin wrapper around 
 pre-built worker script.
 
 **When to use it:** datasets with ~10,000+ rows, or many wafers processed at once.
-For small fixed datasets the overhead is not worth it.  `buildScene` and `toPlotly`
+For small fixed datasets the overhead is not worth it.  `renderWaferMap` and `renderWaferGallery`
 are fast rendering operations and always run on the main thread regardless.
 
 ### Setup
@@ -763,14 +647,6 @@ Create the worker once and reuse it for all calls.
 
 ### `createWafermapWorker(worker)`
 
-Wraps a `Worker` instance in a promise-based API.
-
-```ts
-import { createWafermapWorker } from '@paulrobins/wafermap/worker';
-
-const wm = createWafermapWorker(new Worker(workerUrl, { type: 'module' }));
-```
-
 Returns a `WafermapWorker`:
 
 ```ts
@@ -786,18 +662,16 @@ Identical input and output to `buildWaferMap` — just async.
 
 ```ts
 // Replaces:
-const result = buildWaferMap({ results, waferConfig, dieConfig });
+const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig });
 
 // With:
-const result = await worker.run({ results, waferConfig, dieConfig });
+const { wafer, dies } = await worker.run({ results, waferConfig, dieConfig });
 
 // Everything after is unchanged:
-const { data, layout } = toPlotly(result.scene);
-Plotly.react('chart', data, layout);
+renderWaferMap(canvas, wafer, dies);
 ```
 
-Multiple concurrent calls are safe — each is tracked by an internal ID and
-resolves independently.  Run wafers in parallel with `Promise.all`:
+Multiple concurrent calls are safe — each resolves independently.  Run wafers in parallel with `Promise.all`:
 
 ```ts
 const results = await Promise.all(
@@ -808,30 +682,110 @@ const results = await Promise.all(
 ### `worker.terminate()`
 
 Shuts down the underlying worker.  Any in-flight `run()` calls reject immediately.
-Call when the worker is no longer needed (e.g. component unmount).
+
+---
+
+## Lower-level APIs
+
+These APIs give you direct control over the rendering pipeline.  Use them when you
+need to integrate with your own rendering loop, build a custom gallery, or use the
+Plotly SVG renderer.  For most application development, prefer `renderWaferMap` and
+`renderWaferGallery` above.
+
+### `toPlotly(scene, options?)`
+
+Converts a scene into Plotly-compatible `{ data, layout }`.
+
+Plotly.js must be loaded separately — no runtime dependency on Plotly is included
+in this package.
 
 ```ts
-worker.terminate();
+import { buildWaferMap, toPlotly } from '@paulrobins/wafermap';
+
+const result = buildWaferMap({ results, waferConfig, dieConfig });
+const { data, layout } = toPlotly(result.scene);
+Plotly.react('chart', data, layout, { responsive: true });
 ```
+
+```ts
+interface ToPlotlyOptions {
+  showAxes?:          boolean                    // show X/Y axis tick marks and labels (default false)
+  showPhysicalUnits?: boolean                    // append "(mm)" to axis titles (default false)
+  showColorbar?:      boolean                    // show the continuous-value colorbar (default true)
+  diePitchMm?:        { x: number; y: number }  // show die grid indices on axis ticks
+  axisLabels?:        { x?: string; y?: string }
+}
+```
+
+**Connecting click drill-down:**
+
+```ts
+import { getDieAtPoint } from '@paulrobins/wafermap';
+
+document.getElementById('chart').on('plotly_click', (ev) => {
+  const die = getDieAtPoint(result.scene, ev);
+  if (die) console.log(die.i, die.j, die.values, die.bins);
+});
+```
+
+### `toCanvas(canvas, scene, options?)`
+
+Renders a scene directly onto an HTML `<canvas>` element using the 2D Canvas API.
+No toolbar is provided — this is a one-shot draw call.
+
+```ts
+import { toCanvas } from '@paulrobins/wafermap/canvas-adapter';
+```
+
+```ts
+interface ToCanvasOptions {
+  padding?:       number    // CSS-px padding inside canvas edge (default 16)
+  showColorbar?:  boolean   // draw colorbar / bin legend (default true)
+  colorbarWidth?: number    // CSS-px width of the colorbar strip (default 16)
+  background?:    string    // canvas background colour (default '#f5f5f5')
+  showAxes?:      boolean   // draw axis tick marks and labels (default false)
+  diePitchMm?:    { x: number; y: number }  // convert mm axis labels to die-index labels
+}
+```
+
+**Legend behaviour by plot mode:**
+
+| Mode | Right-side legend |
+| --- | --- |
+| `value`, `softbin`, `stackedValues` | Continuous colorbar (gradient strip with min/max ticks) |
+| `hardbin`, `stackedBins` | Bin legend: one swatch + label per unique bin; overflows show `"+ N more"` |
+
+Returns `{ hitTarget, viewport, binLegendRows }`:
+- `hitTarget.getDieAtPoint(x, y): Die | null` — hit-test a CSS-pixel position
+- `viewport` — the auto-fitted viewport transform (useful as initial state for custom zoom/pan)
+- `binLegendRows` — `{ bin, y, h }[]` for hit-testing legend row clicks (non-empty for hardbin/stackedBins)
+
+```ts
+const result  = buildWaferMap({ results, waferConfig, dieConfig });
+const scene   = buildScene(result.wafer, result.dies, { plotMode: 'hardbin' });
+const { hitTarget } = toCanvas(canvas, scene);
+
+canvas.addEventListener('mousemove', e => {
+  const r   = canvas.getBoundingClientRect();
+  const die = hitTarget.getDieAtPoint(e.clientX - r.left, e.clientY - r.top);
+  if (die) showTooltip(die);
+});
+```
+
+`toCanvas` reads `window.devicePixelRatio` automatically.  Set canvas size in CSS only.
 
 ---
 
 ## Package surface
 
-Most consumers import from the top-level package:
-
 ```ts
-import { buildWaferMap, toPlotly } from '@paulrobins/wafermap';
+import { buildWaferMap }                       from '@paulrobins/wafermap';
+import { renderWaferMap, renderWaferGallery }  from '@paulrobins/wafermap/canvas-adapter';
+import { toPlotly }                            from '@paulrobins/wafermap';
+import { createWafermapWorker }                from '@paulrobins/wafermap/worker';
 ```
 
-Or from subpath exports:
-
-```ts
-import { buildWaferMap }             from '@paulrobins/wafermap/renderer';
-import { createWafer, generateDies } from '@paulrobins/wafermap/core';
-import { toPlotly }                  from '@paulrobins/wafermap/plotly-adapter';
-import { createWafermapWorker }      from '@paulrobins/wafermap/worker';
-```
+Available subpath exports: `@paulrobins/wafermap`, `/core`, `/renderer`, `/plotly-adapter`, `/canvas-adapter`, `/worker`, `/worker-script`
 
 ---
 
@@ -840,27 +794,23 @@ import { createWafermapWorker }      from '@paulrobins/wafermap/worker';
 For full control over each pipeline stage, use the low-level functions directly.
 These are the building blocks that `buildWaferMap` uses internally.
 
-The **Manual Pipeline** demo (`basic-demo`) is the reference for this path.  Prefer `buildWaferMap` for all
-other use cases.
+The [Manual Pipeline demo](../examples/basic-demo/) (`basic-demo`) is the reference for this path.  Prefer `buildWaferMap` for all other use cases.
 
 ```text
-createWafer(config)
-  → generateDies(wafer, dieConfig)
-  → clipDiesToWafer(dies, wafer, dieConfig)
+createWafer(spec)
+  → generateDies(wafer, dieSpec)
+  → clipDiesToWafer(dies, wafer, dieSpec)
   → [attach values / bins / metadata to each die, keyed by die.i, die.j]
   → applyProbeSequence(dies, config)              // optional
   → applyOrientation(dies, wafer)
   ↓  (on each redraw)
   → transformDies(dies, interactiveTransform, wafer.center)
   → buildScene(wafer, dies, options)   → Scene
-  → toPlotly(scene, options)           → { data, layout }
-  → Plotly.react(el, data, layout)
+  → toPlotly(scene)  or  toCanvas(canvas, scene)
 ```
 
 In the manual pipeline, `die.i` and `die.j` are computed by `generateDies` as
-integer grid indices centred at the wafer origin.  For data keyed by prober step
-positions, match on `die.i, die.j` directly (they equal the prober step positions
-for grids centered at (0,0)).
+integer grid indices centred at the wafer origin.
 
 ### `createWafer(spec)`
 
@@ -871,7 +821,6 @@ Creates a wafer model.  `diameter` is required.  Accepts a `WaferSpec`:
   diameter:     number                     // required
   center?:      { x: number; y: number }   // mm, default {0, 0}
   notch?:       { type: 'top' | 'bottom' | 'left' | 'right' }
-                // Standard length derived from diameter automatically
   orientation?: number                     // degrees CCW, default 0
   metadata?:    WaferMetadata
 }
@@ -900,7 +849,7 @@ Returns `Die[]` with `id`, `i`, `j`, `x`, `y`, `width`, `height`.
 
 ### `clipDiesToWafer(dies, wafer, spec?)`
 
-Clips dies to the wafer boundary (circle + optional notch/flat exclusion zone).  The optional third argument is a `DieSpec`.
+Clips dies to the wafer boundary (circle + optional notch/flat exclusion zone).
 
 - Removes dies entirely outside the wafer.
 - Sets `insideWafer: true` on included dies.
@@ -910,8 +859,7 @@ Clips dies to the wafer boundary (circle + optional notch/flat exclusion zone). 
 
 ### `isInsideWafer(x, y, wafer)`
 
-Returns `true` when the point (x, y) falls inside the wafer boundary including
-the notch/flat exclusion zone.  Coordinates are wafer-local (pre-rotation).
+Returns `true` when the point (x, y) falls inside the wafer boundary.
 
 ---
 
@@ -932,7 +880,6 @@ Maps row data onto dies, attaching `values` and/or `bins`.
 ### `applyOrientation(dies, wafer)`
 
 Rotates die coordinates by `wafer.orientation` around `wafer.center`.
-Call once after clipping and enrichment, before render-time transforms.
 
 ---
 
@@ -942,7 +889,7 @@ Applies interactive display transforms (rotation + flip) around `center`.
 
 ```ts
 {
-  rotation?: number   // degrees
+  rotation?: number
   flipX?:    boolean
   flipY?:    boolean
 }
@@ -961,69 +908,39 @@ Supported strategies: `'row'`, `'column'`, `'snake'`, `'custom'`
 
 ### `generateReticleGrid(wafer, spec)`
 
-Generates reticle rectangles covering the wafer area.  Reticles are rectangular
-groups of dies; positions are computed in die-index space so edges always land
-exactly on die boundaries.  Accepts a `ReticleSpec`:
+Generates reticle rectangles covering the wafer area.  Accepts a `ReticleSpec`:
 
 ```ts
 {
-  width:       number                      // field width in die counts
-  height:      number                      // field height in die counts
-  diePitchX:   number                      // die pitch in display units (mm or normalized)
+  width:       number
+  height:      number
+  diePitchX:   number
   diePitchY:   number
-  anchorDie?:  { x: number; y: number }   // die index at the field's (0,0) corner; default {0,0}
+  anchorDie?:  { x: number; y: number }
 }
 ```
 
-`anchorDie` controls the phase of the reticle grid.  Die `(anchorDie.x, anchorDie.y)` sits
-at the bottom-left corner of a reticle field.
-
-Returns `Reticle[]` — display-coordinate rectangles ready for `buildScene`.
-
-> **Note:** When using `buildWaferMap`, pass `reticleConfig: ReticleConfig` instead — pitch is wired through automatically.  `ReticleSpec` (with explicit `diePitchX`/`diePitchY`) is only needed when calling `generateReticleGrid` directly in the manual pipeline.
+> Via `buildWaferMap`, pass `reticleConfig: ReticleConfig` instead — pitch is wired through automatically.
 
 ---
 
 ### `classifyDie(die, wafer, options?)`
 
-Classifies a die by radial ring and screen quadrant.
+Returns `{ ring: number; quadrant: 'NE' | 'NW' | 'SW' | 'SE' }`.
 
-```ts
-options: { ringCount?: number }   // default 4
-```
-
-Returns:
-
-```ts
-{
-  ring:     number                       // 1 = innermost, ringCount = edge
-  quadrant: 'NE' | 'NW' | 'SW' | 'SE'
-}
-```
-
-Uses the die's current `x`/`y` display position — orientation- and transform-aware.
+`ring` runs 1 (innermost) to `ringCount` (edge, default 4).
 
 ---
 
 ### `getRingLabel(ring, ringCount)`
 
-Returns a human-readable label for a ring index:
-
-| ringCount | ring 1 | ring 2 | ring 3 | ring 4 |
-| --------- | ------ | ------ | ------ | ------ |
-| 1 | Full Wafer | — | — | — |
-| 2 | Core | Edge | — | — |
-| 3 | Core | Middle | Edge | — |
-| 4 | Core | Inner | Outer | Edge |
-| 5+ | Core | Middle N | … | Edge |
+Returns a human-readable label for a ring index.
 
 ---
 
 ### `getUniqueBins(dies, binChannel?)`
 
-Returns all distinct bin values present in the dies, sorted ascending.
-
-`binChannel` selects which `bins[]` index to read (default 0).
+Returns all distinct bin values, sorted ascending.
 
 ---
 
@@ -1031,54 +948,17 @@ Returns all distinct bin values present in the dies, sorted ascending.
 
 Stacks multiple wafers and counts, per die position, how many wafers had a specific bin value.
 
-```ts
-aggregateBinCounts(
-  diesByWafer: Die[][],
-  targetBin:   number,
-  binChannel?: number   // which bins[] index to read, default 0
-): Die[]
-```
+Returns one `Die` per unique `(i, j)` with `values[0]` = count, `bins[0]` = `targetBin`.
 
-Returns one `Die` per unique `(i, j)` position where:
-
-- `values[0]` = number of wafers that had `targetBin` at this position
-- `bins[0]`   = `targetBin`
-
-Use with `plotMode: 'value'` and `valueRange: [0, diesByWafer.length]`:
-
-```ts
-const aggregated = aggregateBinCounts(diesByWafer, 3);
-const scene = buildScene(wafer, aggregated, {
-  plotMode:   'value',
-  valueRange: [0, diesByWafer.length],
-});
-```
-
-For inline multi-wafer aggregation, prefer the `lotStack` option on `buildWaferMap`.
+Use with `plotMode: 'value'` and `valueRange: [0, diesByWafer.length]`.
 
 ---
 
 ### `aggregateValues(diesByWafer, method, binChannel?)`
 
-Aggregate a per-channel numeric value across a lot of wafers.
+`method` = `'mean' | 'median' | 'stddev' | 'min' | 'max' | 'count'`
 
-```ts
-aggregateValues(
-  diesByWafer:  Die[][],
-  method:       AggregationMethod,
-  binChannel?:  number   // which values[] index to aggregate, default 0
-): Die[]
-```
-
-`AggregationMethod` = `'mean' | 'median' | 'stddev' | 'min' | 'max' | 'count'`
-
-Returns one `Die` per unique `(i, j)` position with `values[0]` set to the aggregate.
-Dies with no data at a position are included with `values: undefined`.
-
-```ts
-const lotMean = aggregateValues(diesByWafer, 'mean');
-const scene = buildScene(wafer, lotMean, { plotMode: 'value' });
-```
+Returns one `Die` per unique `(i, j)` with `values[0]` = aggregate.
 
 ---
 
@@ -1101,40 +981,19 @@ interface SceneOptions {
   highlightBin?:           number
   valueRange?:             [number, number]
   interactiveTransform?:   { rotation?: number; flipX?: boolean; flipY?: boolean }
-  reticles?:               Reticle[] // overlay generated by generateReticleGrid
+  reticles?:               Reticle[]
 }
 ```
 
-```ts
-buildScene(wafer, dies, { plotMode: 'hardbin', reticles, showReticle: true })
-```
-
-Returns `Scene`:
-
-```ts
-{
-  rectangles:  SceneRect[]
-  texts:       SceneText[]
-  hoverPoints: SceneHoverPoint[]
-  overlays:    SceneOverlay[]
-  plotMode:    PlotMode
-  colorScheme: string
-  metadata:    WaferMetadata | null
-  dies:        Die[]
-  valueRange:  [number, number]
-}
-```
+Returns `Scene` with `rectangles`, `texts`, `hoverPoints`, `overlays`, `plotMode`, `colorScheme`, `metadata`, `dies`, `valueRange`.
 
 ---
 
 ### `getDieKey(die)`
 
-Returns a stable string key for a die in `"i,j"` format.  Use for `Map` keys and
-post-enrichment lookups instead of ad-hoc template literals.
+Returns a stable string key `"i,j"` for a die.  Always prefer this over ad-hoc template literals.
 
 ```ts
-getDieKey(die: { i: number; j: number }): string
-
 const map = new Map(result.dies.map(d => [getDieKey(d), d]));
 const die = map.get(getDieKey({ i: 3, j: -2 }));
 ```
@@ -1143,17 +1002,7 @@ const die = map.get(getDieKey({ i: 3, j: -2 }));
 
 ### `getDieAtPoint(scene, plotlyEvent)`
 
-Returns the die that a Plotly click or hover event points to.
-
-```ts
-getDieAtPoint(
-  scene: Scene,
-  plotlyEvent: { points?: Array<{ pointIndex?: number; curveNumber?: number }> }
-): Die | null
-```
-
-Returns `null` when the event doesn't resolve to a die (e.g. click on an overlay
-trace rather than the die scatter).
+Returns the die that a Plotly click or hover event points to, or `null`.
 
 ```ts
 chart.on('plotly_click', ev => {
@@ -1200,13 +1049,6 @@ chart.on('plotly_click', ev => {
 }
 ```
 
-`die.i` and `die.j` are the integer grid indices.  For grids centred at (0,0)
-(the common case), they equal the original prober step positions passed as input.
-Use `getDieKey(die)` for stable map keys.
-
-`die.x` and `die.y` are the physical positions derived by the library.  Their unit
-depends on `WaferMapResult.units`.
-
 ### `Wafer`
 
 ```ts
@@ -1221,20 +1063,9 @@ depends on `WaferMapResult.units`.
 }
 ```
 
-### `WaferNotch`
-
-User-facing input type — `length` is derived automatically from the wafer diameter
-by `createWafer` and does not need to be supplied.
-
-```ts
-{
-  type: 'top' | 'bottom' | 'left' | 'right'
-}
-```
-
 ### `WaferMetadata`
 
-An open key-value record — any fields are accepted.  No fixed schema is enforced.
+An open key-value record — any fields are accepted:
 
 ```ts
 type WaferMetadata = Record<string, unknown>
@@ -1252,15 +1083,6 @@ type WaferMetadata = Record<string, unknown>
   temperature?:  number
   customFields?: Record<string, unknown>
   [key: string]: unknown
-}
-```
-
-### `DieClassification`
-
-```ts
-{
-  ring:     number
-  quadrant: 'NE' | 'NW' | 'SW' | 'SE'
 }
 ```
 

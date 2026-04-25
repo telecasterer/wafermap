@@ -1,5 +1,5 @@
 import type { PlotMode } from '../renderer/buildScene.js';
-import { listColorSchemes } from '../renderer/colorSchemes.js';
+import { listColorSchemes, getColorScheme } from '../renderer/colorSchemes.js';
 import type { Wafer } from '../core/wafer.js';
 import type { Die } from '../core/dies.js';
 import { renderWaferMap } from './renderWaferMap.js';
@@ -50,7 +50,7 @@ const ICONS: Record<string, string> = {
   // Die labels: letter A in a square
   labels:      `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 17l3-9 3 9"/><line x1="10.5" y1="13.5" x2="13.5" y2="13.5"/></svg>`,
   // Rotate clockwise
-  rotateCW:    `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9"/><polyline points="21 3 21 9 15 9"/></svg>`,
+  rotateCW:    `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9"/><polyline points="12 3 8 3 8 7"/></svg>`,
   // Flip horizontal
   flipH:       `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><polyline points="7 8 3 12 7 16"/><polyline points="17 8 21 12 17 16"/></svg>`,
   // Flip vertical
@@ -71,6 +71,8 @@ const CLR = {
   menuHover:  '#f0f4fc',
   menuActive: '#dce8f8',
 };
+
+const BIN_LEGEND_MODES = new Set<PlotMode>(['hardbin', 'softbin', 'stackedBins']);
 
 const MODE_LABELS: Record<PlotMode, string> = {
   value:         'Value',
@@ -106,6 +108,7 @@ export function renderWaferGallery(
   };
 
   let cardControllers: WaferCanvasController[] = [];
+  let currentItems: GalleryItem[] = [];
   let openMenu: HTMLDivElement | null = null;
   let modalController: WaferCanvasController | null = null;
   let savedBodyOverflow = '';
@@ -279,7 +282,7 @@ export function renderWaferGallery(
 
   const btnRotate = makeBtn('rotateCW', 'Rotate all 90\xB0 clockwise', () => {
     const r = sharedOpts.rotation ?? 0;
-    applyShared({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 1) % 4] });
+    applyShared({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 3) % 4] });
   });
 
   const btnFlipH = makeBtn('flipH', 'Flip all horizontal', () => {
@@ -314,6 +317,23 @@ export function renderWaferGallery(
   setActive(btnFlipH,     !!sharedOpts.flipX);
   setActive(btnFlipV,     !!sharedOpts.flipY);
 
+  // ── Bin legend strip ───────────────────────────────────────────────────────
+
+  const legendEl = document.createElement('div');
+  Object.assign(legendEl.style, {
+    display:       'flex',
+    flexWrap:      'wrap',
+    gap:           '6px 14px',
+    background:    '#fff',
+    border:        `1px solid rgba(0,0,0,0.12)`,
+    borderRadius:  '6px',
+    padding:       '6px 10px',
+    marginBottom:  '10px',
+    boxShadow:     '0 1px 4px rgba(0,0,0,0.10)',
+    fontSize:      '12px',
+    lineHeight:    '1',
+  });
+
   // ── Grid container ─────────────────────────────────────────────────────────
 
   const gridEl = document.createElement('div');
@@ -324,22 +344,112 @@ export function renderWaferGallery(
   });
 
   container.appendChild(barEl);
+  container.appendChild(legendEl);
   container.appendChild(gridEl);
+
+  // ── Bin legend ─────────────────────────────────────────────────────────────
+
+  function rebuildLegend(): void {
+    legendEl.innerHTML = '';
+    const mode = sharedOpts.plotMode ?? 'hardbin';
+
+    if (!BIN_LEGEND_MODES.has(mode)) {
+      legendEl.style.display = 'none';
+      return;
+    }
+
+    // Collect unique bins across all gallery items.
+    const binSet = new Set<number>();
+    for (const item of currentItems) {
+      for (const die of item.dies) {
+        if (die.partial) continue;
+        if (mode === 'stackedBins') {
+          for (const b of die.bins ?? []) binSet.add(b);
+        } else {
+          const b = die.bins?.[0];
+          if (b != null) binSet.add(b);
+        }
+      }
+    }
+
+    const bins = [...binSet].sort((a, b) => a - b);
+    if (!bins.length) {
+      legendEl.style.display = 'none';
+      return;
+    }
+
+    legendEl.style.display = 'flex';
+    const scheme = getColorScheme(sharedOpts.colorScheme);
+    const activeBin = sharedOpts.highlightBin;
+
+    for (const bin of bins) {
+      const isActive = activeBin === bin;
+      const entry = document.createElement('div');
+      Object.assign(entry.style, {
+        display:     'flex',
+        alignItems:  'center',
+        gap:         '5px',
+        cursor:      'pointer',
+        userSelect:  'none',
+        padding:     '2px 4px',
+        borderRadius: '3px',
+      });
+
+      const swatch = document.createElement('span');
+      Object.assign(swatch.style, {
+        display:      'inline-block',
+        width:        '13px',
+        height:       '13px',
+        flexShrink:   '0',
+        background:   scheme.forBin(bin),
+        border:       isActive ? '2px solid #1a66cc' : '1px solid #ccc',
+        borderRadius: '2px',
+        boxSizing:    'border-box',
+      });
+
+      const lbl = document.createElement('span');
+      lbl.textContent = `Bin ${bin}`;
+      Object.assign(lbl.style, {
+        fontWeight: isActive ? '700' : '400',
+        color:      isActive ? CLR.iconActive : '#444',
+        whiteSpace: 'nowrap',
+      });
+
+      entry.appendChild(swatch);
+      entry.appendChild(lbl);
+
+      entry.addEventListener('mouseenter', () => {
+        entry.style.background = CLR.bgHover;
+      });
+      entry.addEventListener('mouseleave', () => {
+        entry.style.background = 'transparent';
+      });
+      entry.addEventListener('click', () => {
+        const next = sharedOpts.highlightBin === bin ? undefined : bin;
+        applyShared({ highlightBin: next });
+      });
+
+      legendEl.appendChild(entry);
+    }
+  }
 
   // ── Shared option sync ─────────────────────────────────────────────────────
 
   function applyShared(partial: Partial<WaferSceneOptions>): void {
     sharedOpts = { ...sharedOpts, ...partial };
     for (const ctrl of cardControllers) ctrl.setOptions(partial);
+    rebuildLegend();
     options.onSceneOptionsChange?.(sharedOpts);
   }
 
   // ── Card building ──────────────────────────────────────────────────────────
 
   function buildCards(newItems: GalleryItem[]): void {
+    currentItems = newItems;
     for (const ctrl of cardControllers) ctrl.destroy();
     cardControllers = [];
     gridEl.innerHTML = '';
+    rebuildLegend();
 
     for (const item of newItems) {
       const card = document.createElement('div');
@@ -462,16 +572,23 @@ export function renderWaferGallery(
     modalHeader.appendChild(spacer);
     modalHeader.appendChild(closeBtn);
 
-    const modalCanvas = document.createElement('canvas');
-    Object.assign(modalCanvas.style, {
-      flex:      '1',
-      width:     '100%',
-      display:   'block',
+    const modalCanvasWrap = document.createElement('div');
+    Object.assign(modalCanvasWrap.style, {
+      flex:     '1',
       minHeight: '0',
+      position: 'relative',
     });
 
+    const modalCanvas = document.createElement('canvas');
+    Object.assign(modalCanvas.style, {
+      width:   '100%',
+      height:  '100%',
+      display: 'block',
+    });
+
+    modalCanvasWrap.appendChild(modalCanvas);
     box.appendChild(modalHeader);
-    box.appendChild(modalCanvas);
+    box.appendChild(modalCanvasWrap);
     backdrop.appendChild(box);
     document.body.appendChild(backdrop);
 
@@ -557,6 +674,7 @@ export function renderWaferGallery(
       openMenu?.remove();
       document.removeEventListener('click', closeOpenMenu, true);
       barEl.remove();
+      legendEl.remove();
       gridEl.remove();
     },
   };

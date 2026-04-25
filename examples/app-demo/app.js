@@ -3,10 +3,9 @@ import {
   aggregateBinCounts,
   getColorScheme,
   listColorSchemes,
-  buildScene,
 } from 'wafermap';
 import { createWafermapWorker } from 'wafermap/worker';
-import { toCanvas, renderWaferGallery } from 'wafermap/canvas-adapter';
+import { renderWaferMap, renderWaferGallery } from 'wafermap/canvas-adapter';
 
 const workerUrl = new URL('../../dist/packages/worker/wafermap.worker.js', import.meta.url);
 const wmWorker = createWafermapWorker(new Worker(workerUrl, { type: 'module' }));
@@ -398,13 +397,12 @@ function renderBinGallery() {
     const totalHits  = aggregated.reduce((s, d) => s + (d.values?.[0] ?? 0), 0);
     const affected   = aggregated.filter(d => (d.values?.[0] ?? 0) > 0).length;
 
-    const scene = buildScene(wafer, aggregated, {
-      plotMode: 'value', valueRange: [0, numWafers],
-      colorScheme, showRingBoundaries: showRings,
-    });
-
     const canvas = document.getElementById(`map-bin-${bin}`);
-    toCanvas(canvas, scene, { padding: 6 });
+    renderWaferMap(canvas, wafer, aggregated, {
+      sceneOptions: { plotMode: 'value', valueRange: [0, numWafers], colorScheme, showRingBoundaries: showRings },
+      showToolbar: false,
+      showTooltip: false,
+    });
 
     const subEl   = document.getElementById(`binsub-${bin}`);
     const statsEl = document.getElementById(`mapstats-bin-${bin}`);
