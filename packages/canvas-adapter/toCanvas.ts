@@ -1,0 +1,349 @@
+import type { Scene } from '../renderer/buildScene.js';
+import type { Die } from '../core/dies.js';
+import { getColorScheme } from '../renderer/colorSchemes.js';
+import { svgPathToCanvas } from './svgPathToCanvas.js';
+
+export interface ToCanvasOptions {
+  /** Padding in CSS pixels inside the canvas edge. Default 16. */
+  padding?: number;
+  /** Draw a continuous colorbar for value/softbin/stackedValues modes. Default true. */
+  showColorbar?: boolean;
+  /** Width in CSS pixels of the colorbar strip. Default 16. */
+  colorbarWidth?: number;
+  /** Canvas background colour. Default '#f5f5f5'. */
+  background?: string;
+  /**
+   * Draw axis tick marks and labels. Default false.
+   * When true, labels show die grid indices if `diePitchMm` is provided,
+   * otherwise mm values.
+   */
+  showAxes?: boolean;
+  /** Die pitch in mm — used to convert mm axis values to die-index labels. */
+  diePitchMm?: { x: number; y: number };
+  /**
+   * Override the viewport transform. When provided, `originX`, `originY`,
+   * and `ppm` replace the auto-fitted values — used by mountWaferCanvas for
+   * zoom/pan. Also accepts a zoom-adjusted `snapDist` for hit testing.
+   */
+  _viewport?: ViewportTransform;
+}
+
+/** Internal viewport state shared between toCanvas and mountWaferCanvas. */
+export interface ViewportTransform {
+  originX:  number;
+  originY:  number;
+  ppm:      number;   // pixels per mm
+  snapDist: number;   // mm radius for getDieAtPoint proximity test
+}
+
+export interface CanvasHitTarget {
+  /** Given a CSS-pixel position on the canvas, return the die at that point or null. */
+  getDieAtPoint(x: number, y: number): Die | null;
+}
+
+export interface ToCanvasResult {
+  hitTarget:  CanvasHitTarget;
+  /** The fitted viewport — useful as initial state for mountWaferCanvas. */
+  viewport:   ViewportTransform;
+}
+
+const COLORBAR_MODES = new Set(['value', 'softbin', 'stackedValues']);
+const COLORBAR_LABEL_FONT = '10px system-ui, sans-serif';
+const COLORBAR_STEPS = 128;
+const AXIS_TICK_FONT  = '10px system-ui, sans-serif';
+const AXIS_TICK_LEN   = 4;  // px
+
+export function toCanvas(
+  canvas: HTMLCanvasElement,
+  scene: Scene,
+  options: ToCanvasOptions = {},
+): ToCanvasResult {
+  const {
+    padding       = 16,
+    showColorbar  = true,
+    colorbarWidth = 16,
+    background    = '#f5f5f5',
+    showAxes      = false,
+    diePitchMm,
+    _viewport,
+  } = options;
+
+  const drawColorbar = showColorbar && COLORBAR_MODES.has(scene.plotMode);
+
+  // ── HiDPI setup ────────────────────────────────────────────────────────────
+  const dpr     = window.devicePixelRatio ?? 1;
+  const cssW    = canvas.clientWidth  || canvas.width;
+  const cssH    = canvas.clientHeight || canvas.height;
+  canvas.width  = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+
+  const ctx = canvas.getContext('2d')!;
+  ctx.scale(dpr, dpr);
+
+  // ── Background ─────────────────────────────────────────────────────────────
+  ctx.fillStyle = background;
+  ctx.fillRect(0, 0, cssW, cssH);
+
+  // ── Compute data bounding box ───────────────────────────────────────────────
+  const pts = scene.hoverPoints;
+  if (!pts.length) {
+    const vp: ViewportTransform = { originX: 0, originY: 0, ppm: 1, snapDist: 1 };
+    return { hitTarget: { getDieAtPoint: () => null }, viewport: vp };
+  }
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  const firstRect = scene.rectangles[0];
+  const halfW = firstRect ? firstRect.width  / 2 : 0;
+  const halfH = firstRect ? firstRect.height / 2 : 0;
+  minX -= halfW; maxX += halfW;
+  minY -= halfH; maxY += halfH;
+
+  const dataW = maxX - minX;
+  const dataH = maxY - minY;
+
+  // ── Viewport transform ─────────────────────────────────────────────────────
+  const colorbarReserve = drawColorbar ? colorbarWidth + 28 : 0;
+  const axisReserve     = showAxes ? 32 : 0;
+  const drawW = cssW - 2 * padding - colorbarReserve;
+  const drawH = cssH - 2 * padding - axisReserve;
+
+  let originX: number, originY: number, ppm: number;
+
+  if (_viewport) {
+    ({ originX, originY, ppm } = _viewport);
+  } else {
+    ppm     = Math.min(drawW / dataW, drawH / dataH);
+    originX = padding + (drawW - dataW * ppm) / 2 - minX * ppm;
+    originY = padding + (drawH - dataH * ppm) / 2 + maxY * ppm;
+  }
+
+  const snapDist = _viewport?.snapDist ?? Math.max(halfW, halfH, 1) * 1.5;
+
+  // ── Draw rectangles ────────────────────────────────────────────────────────
+  ctx.save();
+  ctx.setTransform(ppm, 0, 0, -ppm, originX, originY);
+
+  for (const rect of scene.rectangles) {
+    ctx.beginPath();
+    svgPathToCanvas(ctx, rect.path);
+    ctx.fillStyle = String(rect.fill);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+    ctx.lineWidth = 0.5 / ppm;
+    ctx.stroke();
+  }
+
+  // ── Draw overlays ──────────────────────────────────────────────────────────
+  for (const overlay of scene.overlays) {
+    ctx.beginPath();
+    svgPathToCanvas(ctx, overlay.path);
+    if (overlay.fill && !overlay.fill.startsWith('rgba(0,0,0,0)')) {
+      ctx.fillStyle = overlay.fill;
+      ctx.fill();
+    }
+    ctx.strokeStyle = overlay.lineColor;
+    ctx.lineWidth = overlay.lineWidth / ppm;
+    ctx.stroke();
+  }
+
+  ctx.restore();
+
+  // ── Draw text labels (screen coords to avoid Y-flip distortion) ────────────
+  ctx.save();
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  for (const text of scene.texts) {
+    const sx = originX + text.x * ppm;
+    const sy = originY - text.y * ppm;
+    ctx.font      = `${text.fontSize}px system-ui, sans-serif`;
+    ctx.fillStyle = text.color;
+    ctx.fillText(text.text, sx, sy);
+  }
+  ctx.restore();
+
+  // ── Draw axis ticks ────────────────────────────────────────────────────────
+  if (showAxes) {
+    drawAxisTicks(ctx, cssW, cssH, originX, originY, ppm, padding, axisReserve, diePitchMm);
+  }
+
+  // ── Draw colorbar ──────────────────────────────────────────────────────────
+  if (drawColorbar) {
+    const scheme    = getColorScheme(scene.colorScheme);
+    const labelGap  = 20;
+    // Match Plotly: bar occupies ~75% of canvas height, centred vertically.
+    const cbH       = Math.round((cssH - 2 * padding) * 0.75);
+    const cbY       = padding + Math.round((cssH - 2 * padding - cbH) / 2);
+    const cbX       = cssW - padding - colorbarWidth - labelGap;
+    const [vMin, vMax] = scene.valueRange;
+    const vRange    = vMax - vMin;
+
+    // Gradient strip.
+    for (let i = 0; i < COLORBAR_STEPS; i++) {
+      const t  = 1 - i / (COLORBAR_STEPS - 1);
+      const sy = cbY + (i / COLORBAR_STEPS) * cbH;
+      const sh = cbH / COLORBAR_STEPS + 1;
+      ctx.fillStyle = scheme.forValue(t);
+      ctx.fillRect(cbX, sy, colorbarWidth, sh);
+    }
+
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth   = 0.5;
+    ctx.strokeRect(cbX, cbY, colorbarWidth, cbH);
+
+    // Ticks + labels.
+    ctx.fillStyle   = '#333';
+    ctx.font        = COLORBAR_LABEL_FONT;
+    ctx.textAlign   = 'left';
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.lineWidth   = 0.5;
+
+    const tickLen    = 3;
+    const minPixels  = 36;  // minimum px between tick centres
+    const step       = vRange > 0 ? niceStep(vRange * minPixels / cbH) : 0;
+
+    // Exclude intermediates within this many px of either endpoint — enough
+    // that a 10px 'middle'-baseline label never overlaps the endpoint label.
+    const endpointGuard = 14;
+    const ticks: number[] = [];
+    if (step > 0) {
+      const first = Math.ceil(vMin / step) * step;
+      for (let v = first; v <= vMax + 1e-10; v += step) {
+        const py = (1 - (v - vMin) / vRange) * cbH;
+        if (py > endpointGuard && py < cbH - endpointGuard) ticks.push(v);
+      }
+    }
+
+    // Draw intermediate ticks with middle baseline.
+    ctx.textBaseline = 'middle';
+    for (const v of ticks) {
+      const sy = cbY + (1 - (v - vMin) / vRange) * cbH;
+      ctx.beginPath();
+      ctx.moveTo(cbX + colorbarWidth, sy);
+      ctx.lineTo(cbX + colorbarWidth + tickLen, sy);
+      ctx.stroke();
+      ctx.fillText(fmt(v), cbX + colorbarWidth + tickLen + 2, sy);
+    }
+
+    // Always draw exact min/max at the bar edges.
+    ctx.beginPath();
+    ctx.moveTo(cbX + colorbarWidth, cbY);
+    ctx.lineTo(cbX + colorbarWidth + tickLen, cbY);
+    ctx.stroke();
+    ctx.textBaseline = 'top';
+    ctx.fillText(fmt(vMax), cbX + colorbarWidth + tickLen + 2, cbY);
+
+    ctx.beginPath();
+    ctx.moveTo(cbX + colorbarWidth, cbY + cbH);
+    ctx.lineTo(cbX + colorbarWidth + tickLen, cbY + cbH);
+    ctx.stroke();
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(fmt(vMin), cbX + colorbarWidth + tickLen + 2, cbY + cbH);
+  }
+
+  // ── Build viewport and hit target ──────────────────────────────────────────
+  const viewport: ViewportTransform = { originX, originY, ppm, snapDist };
+
+  const hitTarget: CanvasHitTarget = {
+    getDieAtPoint(px: number, py: number): Die | null {
+      const mx = (px - originX) / ppm;
+      const my = (originY - py) / ppm;
+
+      let bestDie: Die | null = null;
+      let bestDist = snapDist * snapDist;
+
+      for (let i = 0; i < pts.length; i++) {
+        const dx = pts[i].x - mx;
+        const dy = pts[i].y - my;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < bestDist) {
+          bestDist = d2;
+          bestDie  = scene.dies[i] ?? null;
+        }
+      }
+      return bestDie;
+    },
+  };
+
+  return { hitTarget, viewport };
+}
+
+// ── Axis tick rendering ────────────────────────────────────────────────────────
+
+function drawAxisTicks(
+  ctx: CanvasRenderingContext2D,
+  cssW: number,
+  cssH: number,
+  originX: number,
+  originY: number,
+  ppm: number,
+  padding: number,
+  axisReserve: number,
+  diePitchMm?: { x: number; y: number },
+): void {
+  ctx.save();
+  ctx.font        = AXIS_TICK_FONT;
+  ctx.fillStyle   = '#555';
+  ctx.strokeStyle = '#bbb';
+  ctx.lineWidth   = 0.5;
+
+  const axisY = cssH - axisReserve + 4;
+  const axisX = padding - 4;
+
+  // Target ~one tick per 50px.
+  const xTickStepMm = niceStep(50 / ppm);
+  const yTickStepMm = niceStep(50 / ppm);
+
+  // X axis (bottom)
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'top';
+  const xStartMm = Math.ceil(((padding - originX) / ppm) / xTickStepMm) * xTickStepMm;
+  const xEndMm   = (cssW - padding - originX) / ppm;
+  for (let mm = xStartMm; mm <= xEndMm; mm += xTickStepMm) {
+    const sx = originX + mm * ppm;
+    if (sx < padding || sx > cssW - padding) continue;
+    ctx.beginPath();
+    ctx.moveTo(sx, axisY - AXIS_TICK_LEN);
+    ctx.lineTo(sx, axisY);
+    ctx.stroke();
+    const label = diePitchMm ? String(Math.round(mm / diePitchMm.x)) : fmt(mm);
+    ctx.fillText(label, sx, axisY + 2);
+  }
+
+  // Y axis (left) — remember Y is flipped: screen y = originY - mm * ppm
+  ctx.textAlign    = 'right';
+  ctx.textBaseline = 'middle';
+  const yStartMm = Math.ceil(((originY - (cssH - padding)) / ppm) / yTickStepMm) * yTickStepMm;
+  const yEndMm   = (originY - padding) / ppm;
+  for (let mm = yStartMm; mm <= yEndMm; mm += yTickStepMm) {
+    const sy = originY - mm * ppm;
+    if (sy < padding || sy > cssH - padding) continue;
+    ctx.beginPath();
+    ctx.moveTo(axisX, sy);
+    ctx.lineTo(axisX + AXIS_TICK_LEN, sy);
+    ctx.stroke();
+    const label = diePitchMm ? String(Math.round(mm / diePitchMm.y)) : fmt(mm);
+    ctx.fillText(label, axisX - 2, sy);
+  }
+
+  ctx.restore();
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function niceStep(rawMm: number): number {
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawMm)));
+  const f = rawMm / magnitude;
+  return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * magnitude;
+}
+
+export function fmt(v: number): string {
+  return Math.abs(v) >= 100 ? v.toFixed(0)
+       : Math.abs(v) >= 10  ? v.toFixed(1)
+       :                       v.toFixed(2);
+}

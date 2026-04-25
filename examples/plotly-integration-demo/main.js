@@ -2,209 +2,283 @@ import {
   buildWaferMap,
   classifyDie,
   getRingLabel,
-  listColorSchemes,
   buildScene,
   toPlotly,
+  getDieAtPoint,
 } from 'wafermap';
+import { renderWaferMap } from 'wafermap/canvas-adapter';
 
 const PITCH = 10;
 const WAFER_DIAMETER = 150;
 
-const state = {
-  plotMode: 'value',
-  showText: false,
-  showRingBoundaries: false,
+// Plotly-side display state — mirrors whatever the canvas toolbar sets.
+const plotlyState = {
+  plotMode:               'hardbin',
+  colorScheme:            'color',
+  showRingBoundaries:     false,
   showQuadrantBoundaries: false,
-  showAxes: true,
-  showPhysicalUnits: false,
-  ringCount: 4,
-  colorScheme: 'color',
-  wafer: null,
-  dies: [],
+  showText:               false,
+  ringCount:              4,
+  rotation:               0,
+  flipX:                  false,
+  flipY:                  false,
 };
 
+let wafer = null;
+let dies  = [];
+let canvasCtrl = null;
+
+// ── Boot ───────────────────────────────────────────────────────────────────────
 async function main() {
-  const rows = await loadCsv('../../data/dummy-fulldata.csv');
-  const waferRows = rows.filter(row => row.wafer === 'W01');
+  const rows      = await loadCsv('../../data/dummy-fulldata.csv');
+  const waferRows = rows.filter(r => r.wafer === 'W01');
   const firstRow  = waferRows[0] ?? {};
 
-  // Primary pass — x,y are prober step positions (die grid indices, not mm).
-  const data = waferRows.map(row => ({
-    x:      Number(row.x),
-    y:      Number(row.y),
-    bins:   [Number(row.hbin)],
-    values: [Number(row.testA)],
-  }));
-
   const result = buildWaferMap({
-    results: data,
+    results: waferRows.map(r => ({
+      x: Number(r.x), y: Number(r.y),
+      bins:   [Number(r.hbin)],
+      values: [Number(r.testA)],
+    })),
     waferConfig: {
       diameter: WAFER_DIAMETER,
-      notch: { type: 'bottom' },
-      orientation: 0,
+      notch:    { type: 'bottom' },
       metadata: {
-        lot:          firstRow.lot      ?? 'LOT456',
-        waferNumber:  1,
-        testDate:     firstRow.testdate ?? '—',
-        testProgram:  'PROG-V300-1',
-        temperature:  Number(firstRow.temp ?? 25),
+        lot:         firstRow.lot      ?? 'LOT456',
+        waferNumber: 1,
+        testDate:    firstRow.testdate ?? '—',
+        testProgram: 'PROG-V300-1',
+        temperature: Number(firstRow.temp ?? 25),
       },
     },
     dieConfig: { width: PITCH, height: PITCH },
   });
 
-  state.wafer = result.wafer;
+  wafer = result.wafer;
 
-  // Post-enrich with additional test channels and softbin.
-  // For centred grids (offsetX=0), die.i === original prober x directly.
-  const rowMap = new Map(waferRows.map(row => [`${row.x},${row.y}`, row]));
-  state.dies = result.dies.map(die => {
-    const row = rowMap.get(`${die.i},${die.j}`);
-    if (!row) return die;
+  // Post-enrich with all channels.
+  const rowMap = new Map(waferRows.map(r => [`${r.x},${r.y}`, r]));
+  dies = result.dies.map(die => {
+    const r = rowMap.get(`${die.i},${die.j}`);
+    if (!r) return die;
     return {
       ...die,
-      values: [Number(row.testA), Number(row.testB), Number(row.testC)],
-      bins:   [Number(row.hbin),  Number(row.sbin)],
+      values: [Number(r.testA), Number(r.testB), Number(r.testC)],
+      bins:   [Number(r.hbin),  Number(r.sbin)],
       metadata: {
-        lotId:    row.lot,
-        waferId:  `${row.lot}-${row.wafer}`,
-        testDate: row.testdate,
-        temperature: row.temp,
-        customFields: { hbin: row.hbin, sbin: row.sbin, testA: row.testA, testB: row.testB, testC: row.testC },
+        lotId:       r.lot,
+        waferId:     `${r.lot}-${r.wafer}`,
+        testDate:    r.testdate,
+        temperature: r.temp,
+        customFields: { hbin: r.hbin, sbin: r.sbin, testA: r.testA, testB: r.testB, testC: r.testC },
       },
     };
   });
 
-  bindControls();
-  render();
-}
+  // ── Mount canvas (owns scene + toolbar) ────────────────────────────────────
+  const canvas = document.getElementById('canvas-chart');
+  canvasCtrl = renderWaferMap(canvas, wafer, dies, {
+    sceneOptions: plotlyState,
 
-async function loadCsv(path) {
-  const response = await fetch(path);
-  const text     = await response.text();
-  const [headerLine, ...lines] = text.trim().split(/\r?\n/);
-  const headers = headerLine.split(',');
-  return lines.filter(Boolean).map(line => {
-    const values = line.split(',');
-    return Object.fromEntries(headers.map((h, i) => [h, values[i]]));
+    onSceneOptionsChange(opts) {
+      // Mirror toolbar changes → Plotly.
+      Object.assign(plotlyState, opts);
+      renderPlotly();
+      renderStats();
+    },
+
+    onClick(die) { showDieDetail(die, 'Canvas'); },
+
+    onSelect(dies) {
+      showSelection(dies);
+    },
+  });
+
+  // ── Clear selection button ─────────────────────────────────────────────────
+  document.getElementById('btn-clear-selection').addEventListener('click', () => {
+    canvasCtrl.clearSelection();
+  });
+
+  // ── Plotly — initial render ────────────────────────────────────────────────
+  renderPlotly();
+  renderStats();
+
+  // ── Plotly click handler ───────────────────────────────────────────────────
+  document.getElementById('plotly-chart').on('plotly_click', ev => {
+    const scene = currentPlotlyScene();
+    const die   = getDieAtPoint(scene, ev);
+    if (die) showDieDetail(die, 'Plotly');
   });
 }
 
-function bindControls() {
-  const bindToggle = (id, key) =>
-    document.getElementById(id).addEventListener('click', () => { state[key] = !state[key]; render(); });
-
-  document.getElementById('mode').addEventListener('change', e => { state.plotMode = e.target.value; render(); });
-  document.getElementById('ring-count').addEventListener('change', e => { state.ringCount = Number(e.target.value) || 4; render(); });
-
-  bindToggle('toggle-text',       'showText');
-  bindToggle('toggle-rings',      'showRingBoundaries');
-  bindToggle('toggle-quadrants',  'showQuadrantBoundaries');
-  bindToggle('toggle-axes',       'showAxes');
-  bindToggle('toggle-units',      'showPhysicalUnits');
-
-  const colorSel = document.getElementById('color-scheme');
-  colorSel.innerHTML = listColorSchemes()
-    .filter(({ name }) => name !== 'color')
-    .map(({ name, label }) => `<option value="${name}"${name === state.colorScheme ? ' selected' : ''}>${label}</option>`)
-    .join('');
-  colorSel.addEventListener('change', e => { state.colorScheme = e.target.value; render(); });
+// ── Plotly renderer ────────────────────────────────────────────────────────────
+// Builds a scene from the mirrored plotlyState and passes it to toPlotly.
+function currentPlotlyScene() {
+  return buildScene(wafer, dies, {
+    plotMode:               plotlyState.plotMode,
+    colorScheme:            plotlyState.colorScheme,
+    showText:               plotlyState.showText,
+    showRingBoundaries:     plotlyState.showRingBoundaries,
+    showQuadrantBoundaries: plotlyState.showQuadrantBoundaries,
+    ringCount:              plotlyState.ringCount,
+    interactiveTransform: {
+      rotation: plotlyState.rotation,
+      flipX:    plotlyState.flipX,
+      flipY:    plotlyState.flipY,
+    },
+  });
 }
 
-function render() {
-  updateToggleStates();
-
-  const scene = buildScene(state.wafer, state.dies, {
-    plotMode:               state.plotMode,
-    showText:               state.showText,
-    ringCount:              state.ringCount,
-    showRingBoundaries:     state.showRingBoundaries,
-    showQuadrantBoundaries: state.showQuadrantBoundaries,
-    colorScheme:            state.colorScheme,
-  });
-
+function renderPlotly() {
+  if (!wafer) return;
+  const scene = currentPlotlyScene();
   const { data, layout } = toPlotly(scene, {
-    showAxes:  state.showAxes,
-    showPhysicalUnits: state.showPhysicalUnits,
-    diePitchMm:        { x: PITCH, y: PITCH },
+    diePitchMm: { x: PITCH, y: PITCH },
   });
-  Plotly.react('chart', data, {
+  Plotly.react('plotly-chart', data, {
     ...layout,
-    title:  { text: 'wmap Package → Scene → Plotly', x: 0.03 },
-    margin: { t: 48, l: state.showAxes ? 48 : 10, r: 40, b: state.showAxes ? 40 : 10 },
+    margin: { t: 10, l: 10, r: 10, b: 10 },
   }, { responsive: true });
-
-  renderMetadata(scene.metadata);
-  renderSummaryStats(state.dies);
-  renderSpatialStats(state.dies, state.wafer, state.ringCount);
 }
 
-function updateToggleStates() {
-  for (const [id, active] of [
-    ['toggle-text',      state.showText],
-    ['toggle-rings',     state.showRingBoundaries],
-    ['toggle-quadrants', state.showQuadrantBoundaries],
-    ['toggle-axes',      state.showAxes],
-    ['toggle-units',     state.showPhysicalUnits],
-  ]) {
-    document.getElementById(id).classList.toggle('active', active);
-  }
-  document.getElementById('mode').value       = state.plotMode;
-  document.getElementById('ring-count').value = String(state.ringCount);
-  document.getElementById('color-scheme').value = state.colorScheme;
+// ── Stats panels ───────────────────────────────────────────────────────────────
+function renderStats() {
+  if (!wafer) return;
+  renderMetadata(wafer.metadata);
+  renderSummaryStats(dies);
+  renderSpatialStats(dies, wafer, plotlyState.ringCount);
 }
 
-function renderMetadata(metadata) {
-  document.getElementById('wafer-meta').innerHTML = Object.entries(metadata ?? {}).map(([key, val]) => `
-    <div class="meta-row">
-      <span class="meta-key">${formatKey(key)}</span>
-      <span>${val}</span>
+// ── Info panel helpers ─────────────────────────────────────────────────────────
+function showDieDetail(die, source) {
+  const cf = die.metadata?.customFields ?? {};
+  document.getElementById('die-detail-panel').innerHTML = `
+    <h2>Clicked Die <em style="font-size:10px;opacity:.6">(${source})</em></h2>
+    <div class="die-detail">
+      <em>Position</em> (${die.i}, ${die.j})<br>
+      <em>Physical</em> (${die.x?.toFixed(1)}, ${die.y?.toFixed(1)}) mm<br>
+      ${cf.hbin  !== undefined ? `<em>Hard bin</em> ${cf.hbin}<br>`                      : ''}
+      ${cf.sbin  !== undefined ? `<em>Soft bin</em> ${cf.sbin}<br>`                      : ''}
+      ${cf.testA !== undefined ? `<em>Test A</em> ${Number(cf.testA).toFixed(4)}<br>`   : ''}
+      ${cf.testB !== undefined ? `<em>Test B</em> ${Number(cf.testB).toFixed(4)}<br>`   : ''}
+      ${cf.testC !== undefined ? `<em>Test C</em> ${Number(cf.testC).toFixed(4)}`       : ''}
     </div>
-  `).join('');
+  `;
 }
 
-function renderSummaryStats(dies) {
-  const fullDies  = dies.filter(d => !d.partial);
-  const binCounts = {};
-  for (const die of fullDies) {
-    const bin = die.bins?.[0] ?? 0;
-    binCounts[bin] = (binCounts[bin] ?? 0) + 1;
+function showSelection(dies) {
+  const placeholder = document.getElementById('selection-placeholder');
+  const content     = document.getElementById('selection-content');
+  const hasSelection = dies.length > 0;
+  placeholder.style.display = hasSelection ? 'none' : '';
+  content.classList.toggle('visible', hasSelection);
+
+  if (!hasSelection) {
+    document.getElementById('selected-count').textContent   = '';
+    document.getElementById('selected-stats').innerHTML     = '';
+    document.getElementById('selected-list').innerHTML      = '';
+    return;
   }
-  const rows = [
-    ['Total Dies',   fullDies.length],
-    ['Partial Dies', dies.filter(d => d.partial).length],
-    ...Object.entries(binCounts).sort(([a], [b]) => Number(a) - Number(b))
-      .map(([bin, count]) => [`Bin ${bin}`, `${count} (${(100 * count / fullDies.length).toFixed(1)}%)`]),
-  ];
-  document.getElementById('summary-stats').innerHTML = rows.map(([k, v]) => `
+
+  document.getElementById('selected-count').textContent =
+    `${dies.length} die${dies.length !== 1 ? 's' : ''} selected`;
+
+  // ── Aggregate stats over selected dies ──────────────────────────────────
+  const statsRows = [];
+
+  // Bin distribution.
+  const binCounts = {};
+  for (const d of dies) {
+    const b = d.bins?.[0];
+    if (b !== undefined) binCounts[b] = (binCounts[b] ?? 0) + 1;
+  }
+  const binEntries = Object.entries(binCounts).sort(([a],[b]) => Number(a)-Number(b));
+  for (const [bin, n] of binEntries) {
+    statsRows.push([`Bin ${bin}`, `${n} (${(100*n/dies.length).toFixed(0)}%)`]);
+  }
+
+  // Value stats (channel 0).
+  const vals = dies.map(d => d.values?.[0]).filter(v => v !== undefined);
+  if (vals.length) {
+    const mean   = vals.reduce((s,v) => s+v, 0) / vals.length;
+    const stddev = Math.sqrt(vals.reduce((s,v) => s+(v-mean)**2, 0) / vals.length);
+    const vmin   = Math.min(...vals);
+    const vmax   = Math.max(...vals);
+    statsRows.push(['Mean',   mean.toFixed(4)]);
+    statsRows.push(['Std dev', stddev.toFixed(4)]);
+    statsRows.push(['Min',    vmin.toFixed(4)]);
+    statsRows.push(['Max',    vmax.toFixed(4)]);
+  }
+
+  document.getElementById('selected-stats').innerHTML = statsRows.map(([k,v]) => `
     <div class="stats-row">
       <span class="stats-key">${k}</span>
       <span class="stats-value">${v}</span>
-    </div>
-  `).join('');
+    </div>`).join('');
+
+  // ── Die coordinate chips ─────────────────────────────────────────────────
+  const MAX_CHIPS = 80;
+  document.getElementById('selected-list').innerHTML =
+    dies.slice(0, MAX_CHIPS).map(d => `<span>(${d.i},${d.j})</span>`).join('') +
+    (dies.length > MAX_CHIPS ? `<span style="opacity:.6">+${dies.length - MAX_CHIPS} more</span>` : '');
+}
+
+function renderMetadata(metadata) {
+  document.getElementById('wafer-meta').innerHTML =
+    Object.entries(metadata ?? {}).map(([key, val]) => `
+      <div class="stats-row">
+        <span class="stats-key">${formatKey(key)}</span>
+        <span class="stats-value">${val}</span>
+      </div>`).join('');
+}
+
+function renderSummaryStats(dies) {
+  const full = dies.filter(d => !d.partial);
+  const bins = {};
+  for (const d of full) { const b = d.bins?.[0] ?? 0; bins[b] = (bins[b] ?? 0) + 1; }
+  const rows = [
+    ['Total Dies',   full.length],
+    ['Partial Dies', dies.filter(d => d.partial).length],
+    ...Object.entries(bins).sort(([a],[b]) => Number(a)-Number(b))
+      .map(([b, n]) => [`Bin ${b}`, `${n} (${(100*n/full.length).toFixed(1)}%)`]),
+  ];
+  document.getElementById('summary-stats').innerHTML =
+    rows.map(([k,v]) => `
+      <div class="stats-row">
+        <span class="stats-key">${k}</span>
+        <span class="stats-value">${v}</span>
+      </div>`).join('');
 }
 
 function renderSpatialStats(dies, wafer, ringCount) {
-  const fullDies     = dies.filter(d => !d.partial);
-  const ringStats    = Array.from({ length: ringCount }, (_, i) => ({ label: getRingLabel(i + 1, ringCount), total: 0 }));
-  const quadrantStats = ['NE', 'NW', 'SW', 'SE'].map(label => ({ label, total: 0 }));
-  const quadMap      = new Map(quadrantStats.map(e => [e.label, e]));
-
-  for (const die of fullDies) {
-    const { ring, quadrant } = classifyDie(die, wafer, { ringCount });
-    ringStats[ring - 1].total += 1;
-    quadMap.get(quadrant).total += 1;
+  const full      = dies.filter(d => !d.partial);
+  const ringStats = Array.from({ length: ringCount }, (_, i) =>
+    ({ label: getRingLabel(i + 1, ringCount), total: 0 }));
+  const quadStats = ['NE','NW','SW','SE'].map(l => ({ label: l, total: 0 }));
+  const quadMap   = new Map(quadStats.map(e => [e.label, e]));
+  for (const d of full) {
+    const { ring, quadrant } = classifyDie(d, wafer, { ringCount });
+    ringStats[ring - 1].total++;
+    quadMap.get(quadrant).total++;
   }
-
   const toHtml = rows => rows.map(r => `
     <div class="stats-row">
       <span class="stats-key">${r.label}</span>
       <span class="stats-value">${r.total} dies</span>
-    </div>
-  `).join('');
-
+    </div>`).join('');
   document.getElementById('ring-stats').innerHTML     = toHtml(ringStats);
-  document.getElementById('quadrant-stats').innerHTML = toHtml(quadrantStats);
+  document.getElementById('quadrant-stats').innerHTML = toHtml(quadStats);
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+async function loadCsv(path) {
+  const text = await fetch(path).then(r => r.text());
+  const [headerLine, ...lines] = text.trim().split(/\r?\n/);
+  const headers = headerLine.split(',');
+  return lines.filter(Boolean).map(line => {
+    const vals = line.split(',');
+    return Object.fromEntries(headers.map((h, i) => [h, vals[i]]));
+  });
 }
 
 function formatKey(key) {
@@ -213,5 +287,5 @@ function formatKey(key) {
 
 main().catch(err => {
   console.error(err);
-  document.getElementById('chart').textContent = `Failed to load demo: ${err.message}`;
+  document.getElementById('plotly-chart').textContent = `Failed to load: ${err.message}`;
 });

@@ -371,8 +371,8 @@ function buildRingOverlays(wafer: Wafer, transform: TransformState, ringCount: n
     overlays.push({
       kind: 'ring-boundary',
       path: polylinePath(points, true),
-      lineColor: 'rgba(40,40,40,0.25)',
-      lineWidth: 1,
+      lineColor: 'rgba(255,255,255,0.7)',
+      lineWidth: 1.5,
     });
   }
 
@@ -388,8 +388,8 @@ function buildQuadrantOverlays(wafer: Wafer, transform: TransformState): SceneOv
     return {
       kind: 'quadrant-boundary',
       path: polylinePath([start, end]),
-      lineColor: 'rgba(40,40,40,0.35)',
-      lineWidth: 1,
+      lineColor: 'rgba(255,255,255,0.7)',
+      lineWidth: 1.5,
     };
   });
 }
@@ -643,13 +643,21 @@ export function buildScene(
 
   const rectangles: SceneRect[] = [];
   const hoverPoints: SceneHoverPoint[] = [];
+  // Pre-transformed dies — positions rotated/flipped around wafer centre.
+  // Only the x,y centre moves; die.i/j/width/height/bins/values are unchanged.
+  const transformedDies = (transform.rotation || transform.flipX || transform.flipY)
+    ? dies.map(d => {
+        const tp = transformPoint({ x: d.x, y: d.y }, wafer.center, transform);
+        return { ...d, x: tp.x, y: tp.y };
+      })
+    : dies;
 
-  for (const die of dies) {
-    pushDieRectangles(rectangles, die, plotMode, transform, gap, colorFns, highlightBin, normalize);
-    hoverPoints.push({ x: die.x, y: die.y, text: buildHoverText(die) });
+  for (const tdie of transformedDies) {
+    pushDieRectangles(rectangles, tdie, plotMode, transform, gap, colorFns, highlightBin, normalize);
+    hoverPoints.push({ x: tdie.x, y: tdie.y, text: buildHoverText(tdie) });
   }
 
-  const texts: SceneText[] = showText ? generateTextOverlay(dies, { plotMode, colorFns, normalize }) : [];
+  const texts: SceneText[] = showText ? generateTextOverlay(transformedDies, { plotMode, colorFns, normalize }) : [];
   const overlays = buildBoundaryOverlay(wafer, transform);
 
   if (showRingBoundaries) overlays.push(...buildRingOverlays(wafer, transform, ringCount));

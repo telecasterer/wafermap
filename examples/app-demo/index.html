@@ -6,8 +6,9 @@
   <title>wafermap — CSV Analyzer</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <script type="importmap">{ "imports": {
-    "wafermap":         "../../dist/index.js",
-    "wafermap/worker":  "../../dist/packages/worker/index.js"
+    "wafermap":                  "../../dist/index.js",
+    "wafermap/worker":           "../../dist/packages/worker/index.js",
+    "wafermap/canvas-adapter":   "../../dist/packages/canvas-adapter/index.js"
   } }</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -327,11 +328,9 @@
 
     .chip-actions { display: flex; gap: 5px; align-items: center; }
 
-    /* Gallery grid */
+    /* Gallery grid — layout is now owned by renderWaferGallery's inner gridEl */
     #wafermap-gallery {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-      gap: 12px;
+      display: block;
     }
 
     .map-card {
@@ -361,7 +360,7 @@
     }
     .map-card-remove:hover { color: var(--danger); }
 
-    .map-chart { aspect-ratio: 1; width: 100%; }
+    .map-chart { aspect-ratio: 1; width: 100%; display: block; }
 
     .map-stats {
       padding: 6px 9px;

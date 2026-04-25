@@ -1,6 +1,6 @@
 {
   "name": "@paulrobins/wafermap",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Browser-first wafer map visualization toolkit with a renderer abstraction and Plotly adapter.",
   "type": "module",
   "license": "MIT",
@@ -37,6 +37,10 @@
     "./worker-script": {
       "types": "./dist/packages/worker/wafermap.worker.d.ts",
       "import": "./dist/packages/worker/wafermap.worker.js"
+    },
+    "./canvas-adapter": {
+      "types": "./dist/packages/canvas-adapter/index.d.ts",
+      "import": "./dist/packages/canvas-adapter/index.js"
     }
   },
   "sideEffects": false,

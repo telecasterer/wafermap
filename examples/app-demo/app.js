@@ -4,9 +4,9 @@ import {
   getColorScheme,
   listColorSchemes,
   buildScene,
-  toPlotly,
 } from 'wafermap';
 import { createWafermapWorker } from 'wafermap/worker';
+import { toCanvas, renderWaferGallery } from 'wafermap/canvas-adapter';
 
 const workerUrl = new URL('../../dist/packages/worker/wafermap.worker.js', import.meta.url);
 const wmWorker = createWafermapWorker(new Worker(workerUrl, { type: 'module' }));
@@ -264,6 +264,10 @@ function renderYieldChart() {
   });
 }
 
+// ── Gallery controller ────────────────────────────────────────────────────────
+
+let galleryCtrl = null;
+
 // ── Render queue — debounced, cancellable progressive rendering ───────────────
 
 const renderQueue = { token: 0, timer: null };
@@ -286,36 +290,21 @@ function _doRefreshGallery() {
 }
 
 function renderWafermapGallery() {
-  const gallery = document.getElementById('wafermap-gallery');
-  const { selectedWafers, plotMode, valueChannel, colorScheme, showRings, showQuadrants, showXY, highlightBin } = state.ui;
+  const galleryEl = document.getElementById('wafermap-gallery');
+  const { selectedWafers, plotMode, valueChannel, colorScheme, showRings, showQuadrants, highlightBin } = state.ui;
   const { diesByWafer, wafer } = state.data;
   const selected = [...selectedWafers].sort();
 
+  // Destroy existing gallery controller and clear the container.
+  if (galleryCtrl) { galleryCtrl.destroy(); galleryCtrl = null; }
+  galleryEl.innerHTML = '';
+
   if (!selected.length) {
-    gallery.innerHTML = '<p class="empty-msg">Click wafers in the distribution chart to display them, or use Select All.</p>';
+    galleryEl.innerHTML = '<p class="empty-msg">Click wafers in the distribution chart to display them, or use Select All.</p>';
     return;
   }
 
-  gallery.innerHTML = selected.map(waferId => `
-    <div class="map-card" data-wafer="${waferId}">
-      <div class="map-card-header">
-        <span class="map-card-title">${waferId}</span>
-        <button class="map-card-remove" data-wafer="${waferId}">×</button>
-      </div>
-      <div class="map-chart" id="map-${waferId}"></div>
-      <div class="map-stats" id="mapstats-${waferId}"></div>
-    </div>
-  `).join('');
-
-  for (const el of gallery.querySelectorAll('.map-card-remove')) {
-    el.addEventListener('click', () => {
-      state.ui.selectedWafers.delete(el.dataset.wafer);
-      refreshGallery();
-      renderYieldChart();
-    });
-  }
-
-  const dies4map = plotMode === 'value' && valueChannel > 0
+  const dies4map = valueChannel > 0
     ? dies => dies.map(die => {
         const v = die.values ?? [];
         const reordered = [...v];
@@ -324,45 +313,52 @@ function renderWafermapGallery() {
       })
     : dies => dies;
 
-  // Render one wafer per animation frame so the browser stays responsive.
-  // Capture the token at the start; if it changes, a newer render has started
-  // and this loop should stop.
-  const token = renderQueue.token;
-  let i = 0;
+  const items = selected.map(waferId => ({
+    wafer,
+    dies:  dies4map(diesByWafer[waferId] ?? []),
+    label: waferId,
+  }));
 
-  function renderNext() {
-    if (renderQueue.token !== token) return; // cancelled
-    if (i >= selected.length) return;
+  galleryCtrl = renderWaferGallery(galleryEl, items, {
+    sceneOptions: {
+      plotMode,
+      colorScheme,
+      showRingBoundaries:     showRings,
+      showQuadrantBoundaries: showQuadrants,
+      highlightBin,
+    },
+    onSceneOptionsChange(opts) {
+      // Keep sidebar controls in sync when gallery bar changes something.
+      if (opts.plotMode     !== undefined) { state.ui.plotMode     = opts.plotMode;     document.getElementById('map-mode').value  = opts.plotMode; }
+      if (opts.colorScheme  !== undefined) { state.ui.colorScheme  = opts.colorScheme;  document.getElementById('map-color').value = opts.colorScheme; }
+      if (opts.showRingBoundaries     !== undefined) { state.ui.showRings     = opts.showRingBoundaries;     document.getElementById('btn-rings').checked     = opts.showRingBoundaries; }
+      if (opts.showQuadrantBoundaries !== undefined) { state.ui.showQuadrants = opts.showQuadrantBoundaries; document.getElementById('btn-quadrants').checked = opts.showQuadrantBoundaries; }
+    },
+  });
 
-    const waferId = selected[i++];
+  // Append per-card stats divs after gallery mounts cards (cards are in order).
+  const cards = galleryEl.querySelectorAll('.wmap-gallery-card');
+  cards.forEach((card, i) => {
+    const waferId = selected[i];
     const dies = diesByWafer[waferId];
-    if (dies) {
-      const scene = buildScene(wafer, dies4map(dies), {
-        plotMode, colorScheme,
-        showRingBoundaries:     showRings,
-        showQuadrantBoundaries: showQuadrants,
-        showXYIndicator:        showXY,
-        highlightBin,
-      });
-      const { data, layout } = toPlotly(scene);
-      Plotly.react(`map-${waferId}`, data, { ...layout, margin: { t: 6, l: 6, r: 44, b: 6 } }, { responsive: true });
-      renderMapStats(`mapstats-${waferId}`, dies);
-    }
-
-    requestAnimationFrame(renderNext);
-  }
-
-  requestAnimationFrame(renderNext);
+    if (!dies) return;
+    const statsEl = document.createElement('div');
+    statsEl.className = 'map-stats';
+    card.appendChild(statsEl);
+    renderMapStats(statsEl, dies);
+  });
 }
 
-function renderMapStats(targetId, dies) {
+function renderMapStats(targetEl, dies) {
+  const el       = typeof targetEl === 'string' ? document.getElementById(targetEl) : targetEl;
+  if (!el) return;
   const fullDies  = dies.filter(d => !d.partial);
   const binCounts = {};
   for (const die of fullDies) {
     const bin = die.bins?.[0] ?? 0;
     binCounts[bin] = (binCounts[bin] ?? 0) + 1;
   }
-  document.getElementById(targetId).innerHTML = Object.entries(binCounts)
+  el.innerHTML = Object.entries(binCounts)
     .sort(([a], [b]) => Number(a) - Number(b))
     .map(([bin, count]) => {
       const pct = (100 * count / fullDies.length).toFixed(1);
@@ -385,7 +381,7 @@ function renderBinGallery() {
         <span class="map-card-title">Bin ${bin}</span>
         <span class="map-card-sub" id="binsub-${bin}"></span>
       </div>
-      <div class="map-chart" id="map-bin-${bin}"></div>
+      <canvas class="map-chart" id="map-bin-${bin}"></canvas>
       <div class="map-stats" id="mapstats-bin-${bin}"></div>
     </div>
   `).join('');
@@ -407,8 +403,8 @@ function renderBinGallery() {
       colorScheme, showRingBoundaries: showRings,
     });
 
-    const { data, layout } = toPlotly(scene);
-    Plotly.react(`map-bin-${bin}`, data, { ...layout, margin: { t: 6, l: 6, r: 44, b: 6 } }, { responsive: true });
+    const canvas = document.getElementById(`map-bin-${bin}`);
+    toCanvas(canvas, scene, { padding: 6 });
 
     const subEl   = document.getElementById(`binsub-${bin}`);
     const statsEl = document.getElementById(`mapstats-bin-${bin}`);
@@ -604,31 +600,35 @@ function wireEvents() {
     state.ui.plotMode = e.target.value;
     document.getElementById('map-channel-group').hidden =
       e.target.value !== 'value' || !state.cfg.valueCols.length;
-    refreshGallery();
+    if (state.ui.view === 'maps' && galleryCtrl) galleryCtrl.setOptions({ plotMode: e.target.value });
+    else refreshGallery();
   });
   document.getElementById('map-channel').addEventListener('change', e => {
     state.ui.valueChannel = Number(e.target.value);
-    refreshGallery();
+    refreshGallery(); // channel reorder requires full rebuild
   });
   document.getElementById('map-color').addEventListener('change', e => {
     state.ui.colorScheme = e.target.value;
     renderPareto();
     renderYieldChart();
-    refreshGallery();
+    if (state.ui.view === 'maps' && galleryCtrl) galleryCtrl.setOptions({ colorScheme: e.target.value });
+    else refreshGallery();
   });
   document.getElementById('map-highlight').addEventListener('change', e => {
     state.ui.highlightBin = e.target.value === '' ? undefined : Number(e.target.value);
-    refreshGallery();
+    if (state.ui.view === 'maps' && galleryCtrl) galleryCtrl.setOptions({ highlightBin: state.ui.highlightBin });
+    else refreshGallery();
   });
 
-  for (const [id, key] of [
-    ['btn-rings',     'showRings'],
-    ['btn-quadrants', 'showQuadrants'],
-    ['btn-xy',        'showXY'],
+  for (const [id, stateKey, optsKey] of [
+    ['btn-rings',     'showRings',     'showRingBoundaries'],
+    ['btn-quadrants', 'showQuadrants', 'showQuadrantBoundaries'],
+    ['btn-xy',        'showXY',        null],
   ]) {
     document.getElementById(id).addEventListener('change', e => {
-      state.ui[key] = e.target.checked;
-      refreshGallery();
+      state.ui[stateKey] = e.target.checked;
+      if (optsKey && state.ui.view === 'maps' && galleryCtrl) galleryCtrl.setOptions({ [optsKey]: e.target.checked });
+      else refreshGallery();
     });
   }
 }

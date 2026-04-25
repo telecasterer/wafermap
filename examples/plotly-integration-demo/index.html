@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>wafermap — Single Wafer</title>
+  <title>wafermap — Renderer Comparison</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <script type="importmap">
     {
       "imports": {
-        "wafermap": "../../dist/index.js"
+        "wafermap":                "../../dist/index.js",
+        "wafermap/canvas-adapter": "../../dist/packages/canvas-adapter/index.js"
       }
     }
   </script>
@@ -17,22 +18,23 @@
     body {
       margin: 0;
       font-family: "IBM Plex Sans", system-ui, sans-serif;
-      background:
-        radial-gradient(circle at top left, #f7f3ea 0%, #ece6d8 45%, #ddd4c0 100%);
+      background: radial-gradient(circle at top left, #f7f3ea 0%, #ece6d8 45%, #ddd4c0 100%);
       color: #2f2417;
     }
     .shell {
-      max-width: 1180px;
+      max-width: 1400px;
       margin: 0 auto;
       padding: 24px;
     }
+
+    /* ── Hero ─────────────────────────────────────────────────────────────── */
     .hero {
       margin-bottom: 18px;
       padding: 18px 20px;
-      border: 1px solid rgba(77, 60, 39, 0.14);
+      border: 1px solid rgba(77,60,39,0.14);
       border-radius: 18px;
-      background: rgba(255, 252, 246, 0.72);
-      box-shadow: 0 10px 30px rgba(77, 60, 39, 0.08);
+      background: rgba(255,252,246,0.72);
+      box-shadow: 0 10px 30px rgba(77,60,39,0.08);
     }
     .eyebrow {
       display: inline-block;
@@ -46,203 +48,257 @@
       text-transform: uppercase;
       font-weight: 700;
     }
-    .hero h1 {
-      margin: 0 0 8px;
-      font-size: clamp(1.8rem, 4vw, 3rem);
-      line-height: 1;
-    }
-    .hero p {
-      margin: 0;
-      max-width: 720px;
-      color: #5b4934;
-    }
-    .toolbar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      align-items: center;
-      padding: 14px 16px;
-      border: 1px solid rgba(77, 60, 39, 0.18);
-      border-radius: 16px;
-      background: rgba(255, 252, 246, 0.88);
-      backdrop-filter: blur(10px);
+    .hero h1 { margin: 0 0 8px; font-size: clamp(1.6rem, 3.5vw, 2.6rem); line-height: 1; }
+    .hero p  { margin: 0; max-width: 820px; color: #5b4934; line-height: 1.6; }
+
+
+    /* ── Split layout ─────────────────────────────────────────────────────── */
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
       margin-bottom: 18px;
     }
-    .group {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    @media (max-width: 1000px) {
+      .split { grid-template-columns: 1fr; }
     }
-    .label {
-      font-size: 11px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: #7a6550;
-      font-weight: 700;
-    }
-    select, button {
-      border: 1px solid rgba(77, 60, 39, 0.2);
-      border-radius: 999px;
-      background: #fffdf8;
-      color: #342719;
-      padding: 8px 12px;
-      font: inherit;
-    }
-    button.active {
-      background: #342719;
-      color: #fff8ef;
-    }
-    .layout {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 290px;
-      gap: 18px;
-    }
-    .chart-card, .info-card {
-      border: 1px solid rgba(77, 60, 39, 0.18);
+
+    .renderer-card {
       border-radius: 18px;
-      background: rgba(255, 252, 246, 0.92);
-      box-shadow: 0 16px 40px rgba(77, 60, 39, 0.12);
-    }
-    .chart-card {
-      padding: 8px;
-      min-height: 720px;
-    }
-    #chart {
-      width: 100%;
-      height: 100%;
-      min-height: 700px;
-    }
-    .info-card {
-      padding: 18px;
+      overflow: hidden;
+      box-shadow: 0 16px 40px rgba(77,60,39,0.12);
       display: flex;
       flex-direction: column;
+    }
+
+    /* Renderer badge header */
+    .renderer-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .renderer-header .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .renderer-header .feature-list {
+      color: inherit;
+      font-weight: 400;
+      font-size: 12px;
+      opacity: 0.75;
+    }
+
+    /* Plotly card */
+    .plotly-card .renderer-header {
+      background: #1a3a5c;
+      color: #e8f4ff;
+    }
+    .plotly-card .renderer-header .badge {
+      background: rgba(255,255,255,0.18);
+      color: #fff;
+    }
+    .plotly-card .chart-body {
+      background: rgba(245,249,255,0.95);
+      border: 1px solid rgba(26,58,92,0.18);
+      border-top: none;
+      border-radius: 0 0 18px 18px;
+      padding: 8px;
+      min-height: 580px;
+    }
+    #plotly-chart { width: 100%; height: 100%; min-height: 560px; }
+
+    /* Canvas card */
+    .canvas-card .renderer-header {
+      background: #1a4a2e;
+      color: #e8ffe8;
+    }
+    .canvas-card .renderer-header .badge {
+      background: rgba(255,255,255,0.18);
+      color: #fff;
+    }
+    .canvas-card .chart-body {
+      background: rgba(245,255,245,0.95);
+      border: 1px solid rgba(26,74,46,0.18);
+      border-top: none;
+      border-radius: 0 0 18px 18px;
+      padding: 8px;
+      min-height: 580px;
+      position: relative;  /* toolbar anchors here */
+    }
+    #canvas-chart {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 560px;
+    }
+
+    /* ── Info row ─────────────────────────────────────────────────────────── */
+    .info-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 18px;
     }
+    .info-card {
+      border: 1px solid rgba(77,60,39,0.18);
+      border-radius: 18px;
+      background: rgba(255,252,246,0.92);
+      box-shadow: 0 8px 24px rgba(77,60,39,0.08);
+      padding: 18px;
+    }
     .info-card h2 {
-      margin: 0 0 8px;
-      font-size: 0.95rem;
+      margin: 0 0 10px;
+      font-size: 0.85rem;
       letter-spacing: 0.08em;
       text-transform: uppercase;
       color: #7a6550;
     }
-    .meta-grid, .stats-grid {
-      display: grid;
-      gap: 8px;
-    }
-    .meta-row, .stats-row {
+    .stats-grid { display: grid; gap: 6px; }
+    .stats-row {
       display: flex;
       justify-content: space-between;
       gap: 12px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid rgba(77, 60, 39, 0.08);
+      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(77,60,39,0.08);
+      font-size: 0.88rem;
     }
-    .meta-row:last-child, .stats-row:last-child {
-      border-bottom: 0;
-      padding-bottom: 0;
-    }
-    .meta-key, .stats-key {
+    .stats-row:last-child { border-bottom: 0; padding-bottom: 0; }
+    .stats-key { color: #7a6550; font-weight: 600; }
+    .stats-value { text-align: right; font-variant-numeric: tabular-nums; }
+
+    /* Selected dies panel */
+    #selection-panel { display: block; }
+    #selection-placeholder { color: #7a6550; font-size: 0.88rem; }
+    #selection-content { display: none; }
+    #selection-content.visible { display: block; }
+    #btn-clear-selection {
+      border: 1px solid rgba(77,60,39,0.2);
+      border-radius: 999px;
+      background: transparent;
       color: #7a6550;
-      font-weight: 600;
+      padding: 1px 7px;
+      font-size: 11px;
+      cursor: pointer;
+      line-height: 1.6;
     }
-    .stats-value {
-      text-align: right;
+    #btn-clear-selection:hover { background: rgba(77,60,39,0.08); }
+    #selected-list {
+      max-height: 180px;
+      overflow-y: auto;
+      font-size: 0.82rem;
       font-variant-numeric: tabular-nums;
+      line-height: 1.8;
+      color: #2f2417;
     }
-    .footnote {
-      color: #7a6550;
-      font-size: 0.9rem;
-      line-height: 1.5;
+    #selected-list span {
+      display: inline-block;
+      margin: 2px 4px 2px 0;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: rgba(26,74,46,0.12);
+      font-size: 0.78rem;
     }
-    @media (max-width: 980px) {
-      .layout {
-        grid-template-columns: 1fr;
-      }
-      .chart-card {
-        min-height: 560px;
-      }
-      #chart {
-        min-height: 540px;
-      }
-    }
+
+    /* Clicked-die panel */
+    .die-detail { font-size: 0.88rem; line-height: 1.7; color: #2f2417; }
+    .die-detail em { color: #7a6550; font-style: normal; }
+    #die-detail-panel p { margin: 0; color: #7a6550; font-size: 0.88rem; }
   </style>
 </head>
 <body>
   <div class="shell">
+
     <div class="hero">
-      <span class="eyebrow">Single Wafer</span>
-      <h1>Single-wafer map with stats</h1>
+      <span class="eyebrow">Renderer Comparison</span>
+      <h1>Plotly SVG vs Canvas — same data, toolbar-driven</h1>
       <p>
-        One wafer, three test channels, spatial ring and quadrant statistics, and Plotly click drill-down.
-        Shows the standard <code>buildWaferMap</code> → <code>buildScene</code> → <code>toPlotly</code> flow
-        with post-enrichment for multi-channel data.
+        <strong>Hover over the Canvas chart</strong> to reveal its built-in toolbar: plot mode, colour scheme,
+        rings, quadrants, labels, rotate, flip, zoom, and PNG download — all wafermap-specific controls, always
+        in the same place, no app-level chrome required.
+        The Plotly chart mirrors every change so you can compare renderers directly.
+        Click any die on either chart to inspect it below.
       </p>
     </div>
 
-    <div class="toolbar">
-      <div class="group">
-        <span class="label">Mode</span>
-        <select id="mode">
-          <option value="value">Value</option>
-          <option value="hardbin">Hard Bin</option>
-          <option value="softbin">Soft Bin</option>
-          <option value="stacked_values">Stacked Values</option>
-          <option value="stacked_bins">Stacked Bins</option>
-        </select>
+    <!-- Split: Plotly left, Canvas right -->
+    <div class="split">
+
+      <!-- Plotly -->
+      <div class="renderer-card plotly-card">
+        <div class="renderer-header">
+          <span class="badge">📊 Plotly SVG</span>
+          <span class="feature-list">SVG DOM · built-in zoom · click events · good for single wafers</span>
+        </div>
+        <div class="chart-body">
+          <div id="plotly-chart"></div>
+        </div>
       </div>
-      <div class="group">
-        <span class="label">Overlays</span>
-        <button id="toggle-text" type="button">Labels</button>
-        <button id="toggle-rings" type="button">Rings</button>
-        <button id="toggle-quadrants" type="button">Quadrants</button>
-        <button id="toggle-axes" type="button" class="active">Axes</button>
-        <button id="toggle-units" type="button">mm</button>
+
+      <!-- Canvas -->
+      <div class="renderer-card canvas-card">
+        <div class="renderer-header">
+          <span class="badge">🎨 Canvas 2D</span>
+          <span class="feature-list">Built-in toolbar: mode · colour · rings · quadrants · labels · rotate · flip · zoom · box-select · PNG</span>
+        </div>
+        <div class="chart-body">
+          <canvas id="canvas-chart"></canvas>
+          <!-- mountWaferCanvas injects its toolbar here -->
+        </div>
       </div>
-      <div class="group">
-        <span class="label">Rings</span>
-        <select id="ring-count">
-          <option value="3">3</option>
-          <option value="4" selected>4</option>
-          <option value="5">5</option>
-          <option value="6">6</option>
-        </select>
-      </div>
-      <div class="group">
-        <span class="label">Colour</span>
-        <select id="color-scheme"></select>
-      </div>
+
     </div>
 
-    <div class="layout">
-      <div class="chart-card">
-        <div id="chart"></div>
+    <!-- Info panels -->
+    <div class="info-row">
+
+      <div class="info-card">
+        <h2>Wafer Metadata</h2>
+        <div class="stats-grid" id="wafer-meta"></div>
       </div>
 
-      <aside class="info-card">
-        <section>
-          <h2>Wafer Metadata</h2>
-          <div class="meta-grid" id="wafer-meta"></div>
-        </section>
+      <div class="info-card">
+        <h2>Summary</h2>
+        <div class="stats-grid" id="summary-stats"></div>
+      </div>
 
-        <section>
-          <h2>Summary</h2>
-          <div class="stats-grid" id="summary-stats"></div>
-        </section>
+      <div class="info-card">
+        <h2>Ring Stats</h2>
+        <div class="stats-grid" id="ring-stats"></div>
+      </div>
 
-        <section>
-          <h2>Ring Stats</h2>
-          <div class="stats-grid" id="ring-stats"></div>
-        </section>
+      <div class="info-card">
+        <h2>Quadrant Stats</h2>
+        <div class="stats-grid" id="quadrant-stats"></div>
+      </div>
 
-        <section>
-          <h2>Quadrant Stats</h2>
-          <div class="stats-grid" id="quadrant-stats"></div>
-        </section>
+      <div class="info-card" id="die-detail-panel">
+        <h2>Clicked Die <em style="font-size:10px;opacity:.6">(either chart)</em></h2>
+        <p>Click any die to inspect it.</p>
+      </div>
 
-        <p class="footnote">
-          Think of this as the recipe demo. The application owns data loading and UI, while wafer geometry,
-          scene generation, and Plotly mapping stay inside <code>wafermap</code>.
-        </p>
-      </aside>
+      <div class="info-card" id="selection-panel">
+        <h2 style="display:flex;justify-content:space-between;align-items:center">
+          <span>Selection</span>
+          <button id="btn-clear-selection" type="button" title="Clear selection">✕</button>
+        </h2>
+        <p id="selection-placeholder">Click a die to select it. Ctrl+click to toggle. Drag to box-select (or use ⬚ to lock box-select mode). Press Esc to clear.</p>
+        <div id="selection-content">
+          <div id="selected-count" style="font-size:0.88rem;color:#7a6550;margin-bottom:8px;"></div>
+          <div id="selected-stats" class="stats-grid" style="margin-bottom:8px;"></div>
+          <div id="selected-list"></div>
+        </div>
+      </div>
+
     </div>
   </div>
 

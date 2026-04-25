@@ -10,6 +10,7 @@ The public package surface is exported from:
 - `@paulrobins/wafermap/plotly-adapter`
 - `@paulrobins/wafermap/worker` — `createWafermapWorker()`
 - `@paulrobins/wafermap/worker-script` — the worker script itself (for bundler `?url` imports)
+- `@paulrobins/wafermap/canvas-adapter` — `renderWaferMap()`, `renderWaferGallery()`, `toCanvas()` — interactive canvas renderer, no Plotly required
 
 ---
 
@@ -414,6 +415,322 @@ Behaviour:
 - Hover → invisible scatter trace (one point per die, indexed parallel to `scene.dies`)
 - Text labels → scatter text trace (when `scene.texts.length > 0`)
 - Continuous modes (`value`, `softbin`, `stackedValues`) → reference colorbar trace (suppressed when `showColorbar: false`)
+
+---
+
+## `toCanvas(canvas, scene, options?)`
+
+Renders a scene directly onto an HTML `<canvas>` element using the 2D Canvas API.
+No SVG DOM nodes are created — each die is a canvas fill call — so this adapter
+handles large wafer galleries (25+ wafers, 600+ dies each) without UI freezing.
+
+Use this adapter when rendering speed matters.  Use `toPlotly` when you need
+Plotly's built-in zoom, pan, and axis controls.
+
+```ts
+import { toCanvas } from '@paulrobins/wafermap/canvas-adapter';
+```
+
+### `ToCanvasOptions`
+
+```ts
+interface ToCanvasOptions {
+  padding?:      number   // CSS-px padding inside canvas edge (default 16)
+  showColorbar?: boolean  // draw colorbar for value/softbin/stackedValues modes (default true)
+  colorbarWidth?: number  // CSS-px width of the colorbar strip (default 16)
+  background?:   string   // canvas background colour (default '#f5f5f5')
+}
+```
+
+### `ToCanvasResult`
+
+```ts
+interface ToCanvasResult {
+  hitTarget: CanvasHitTarget
+}
+
+interface CanvasHitTarget {
+  getDieAtPoint(x: number, y: number): Die | null
+}
+```
+
+`hitTarget.getDieAtPoint(x, y)` takes CSS-pixel coordinates relative to the
+canvas element and returns the die at that position, or `null`.
+
+### Usage
+
+```ts
+import { buildWaferMap, buildScene } from '@paulrobins/wafermap';
+import { toCanvas } from '@paulrobins/wafermap/canvas-adapter';
+
+const result = buildWaferMap({ results, waferConfig, dieConfig });
+const scene  = buildScene(result.wafer, result.dies, { plotMode: 'hardbin' });
+
+const canvas = document.getElementById('my-canvas');
+const { hitTarget } = toCanvas(canvas, scene);
+
+// Hover tooltip
+canvas.addEventListener('mousemove', e => {
+  const r   = canvas.getBoundingClientRect();
+  const die = hitTarget.getDieAtPoint(e.clientX - r.left, e.clientY - r.top);
+  if (die) showTooltip(die);
+  else     hideTooltip();
+});
+
+// Click drill-down
+canvas.addEventListener('click', e => {
+  const r   = canvas.getBoundingClientRect();
+  const die = hitTarget.getDieAtPoint(e.clientX - r.left, e.clientY - r.top);
+  if (die) console.log(die.i, die.j, die.values, die.bins);
+});
+```
+
+### HiDPI / retina
+
+`toCanvas` reads `window.devicePixelRatio` automatically and scales the canvas
+backing store accordingly.  Set the canvas size in CSS only — do not set
+`canvas.width` / `canvas.height` before calling `toCanvas`.
+
+```html
+<canvas id="wafer" style="width: 300px; height: 300px;"></canvas>
+```
+
+---
+
+## Canvas adapter API hierarchy
+
+The canvas adapter has three levels — choose the one that matches your use case:
+
+| Function | Use when |
+| --- | --- |
+| `buildWaferMap` | You need the data model: wafer geometry, die positions, yield |
+| `renderWaferMap` | You want a single interactive map with a full toolbar |
+| `renderWaferGallery` | You want a grid of maps with shared controls and click-to-detail |
+| `toCanvas` | You are building a custom gallery or need direct scene rendering |
+
+```ts
+import { renderWaferMap, renderWaferGallery, toCanvas } from '@paulrobins/wafermap/canvas-adapter';
+```
+
+> `mountWaferCanvas` is a deprecated alias for `renderWaferMap` and will be removed in a future release.
+
+---
+
+## `renderWaferMap(canvas, wafer, dies, options?)`
+
+A fully self-contained interactive wafermap. Accepts `wafer` and `dies` directly,
+owns scene building internally, and provides a **built-in toolbar** that appears on
+hover — wafermap-specific controls always in the same place.
+
+The toolbar gives users direct access to every display option without any app-level
+chrome: plot mode, colour scheme, ring and quadrant overlays, die labels, rotate,
+flip, zoom, box-select, and PNG download.
+
+### `WaferSceneOptions`
+
+Scene display options controllable via the toolbar or programmatically:
+
+```ts
+{
+  plotMode?:               PlotMode          // default 'hardbin'
+  colorScheme?:            string            // default 'color'
+  showText?:               boolean           // die index labels
+  showRingBoundaries?:     boolean
+  showQuadrantBoundaries?: boolean
+  ringCount?:              number            // default 4
+  highlightBin?:           number            // dim all other bins
+  rotation?:               0 | 90 | 180 | 270
+  flipX?:                  boolean
+  flipY?:                  boolean
+}
+```
+
+### `MountOptions`
+
+All `ToCanvasOptions` fields (padding, background, showAxes, etc.) are accepted, plus:
+
+```ts
+{
+  sceneOptions?:           WaferSceneOptions  // initial display state
+  onHover?:                (die: Die | null, event: MouseEvent) => void
+  onClick?:                (die: Die, event: MouseEvent) => void
+  onSelect?:               (dies: Die[]) => void     // fires after box-select drag or click-select
+  onSceneOptionsChange?:   (opts: WaferSceneOptions) => void  // mirrors toolbar changes
+  showTooltip?:            boolean   // default true
+  showToolbar?:            boolean   // default true
+  toolbarControls?:        'full' | 'view-only'   // 'view-only' shows only zoom/reset/select/download
+  minZoom?:                number    // default 0.5
+  maxZoom?:                number    // default 20
+}
+```
+
+The box-select toolbar button only appears when `onSelect` is provided.
+
+### `WaferCanvasController`
+
+```ts
+{
+  setDies(dies: Die[]): void                        // replace die data, rebuild scene
+  setOptions(opts: Partial<WaferSceneOptions>): void // merge options, rebuild scene
+  getOptions(): WaferSceneOptions                    // current options snapshot
+  setSelection(dies: Die[]): void                    // programmatically set selection
+  clearSelection(): void
+  resetView(): void                                  // return to fitted view
+  destroy(): void                                    // remove all listeners and DOM elements
+}
+```
+
+### Toolbar buttons (full mode)
+
+| Button | Action |
+| --- | --- |
+| Mode | Dropdown: Value / Hard Bin / Soft Bin / Stacked Values / Stacked Bins |
+| Palette | Dropdown: all registered colour schemes |
+| Rings | Toggle ring boundary overlay |
+| Quadrants | Toggle quadrant boundary overlay |
+| Labels | Toggle die index text labels |
+| Rotate | Rotate 90° clockwise (cycles 0→90→180→270) |
+| Flip H | Mirror horizontally |
+| Flip V | Mirror vertically |
+| Box select | Draw selection rectangle — only shown when `onSelect` is provided |
+| Zoom +/− | Zoom in/out centred on canvas |
+| Reset | Return to fitted view (also: double-click) |
+| Download | Export current view as PNG |
+
+### Interactions
+
+| Gesture | Action |
+| --- | --- |
+| Scroll wheel | Zoom in/out centred on cursor |
+| Click + drag | Pan |
+| Click on die | `onClick` callback; selects die if `onSelect` provided |
+| Ctrl/Cmd+click | Toggle die in selection |
+| Drag (no mode) | Box-select dies |
+| Ctrl+drag | Toggle-select dies in box |
+| Hover over die | Tooltip + `onHover` callback |
+| Double-click | Reset to fitted view |
+| Esc | Clear selection |
+
+### Example
+
+```ts
+import { buildWaferMap } from '@paulrobins/wafermap';
+import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+
+const result = buildWaferMap({ results, waferConfig, dieConfig });
+
+const ctrl = renderWaferMap(canvas, result.wafer, result.dies, {
+  sceneOptions: { plotMode: 'hardbin', colorScheme: 'color' },
+  onClick:  (die)  => console.log(die.i, die.j, die.bins),
+  onSelect: (dies) => console.log(`Selected ${dies.length} dies`),
+  onSceneOptionsChange: (opts) => syncExternalUI(opts),
+});
+
+// Update dies after a data reload — zoom/pan preserved:
+ctrl.setDies(newDies);
+
+// Programmatically change display mode:
+ctrl.setOptions({ plotMode: 'value', colorScheme: 'plasma' });
+
+// Clean up:
+ctrl.destroy();
+```
+
+---
+
+## `renderWaferGallery(container, items, options?)`
+
+A multi-map gallery with a shared control bar, per-card view-only toolbars, and
+click-to-detail modal. All cards stay in sync — changing mode, colour, rotate, or
+flip in the gallery bar applies to every card instantly.
+
+### `GalleryItem`
+
+```ts
+{
+  wafer:     Wafer
+  dies:      Die[]
+  label?:    string                               // card header text
+  onClick?:  (die: Die, event: MouseEvent) => void
+  onSelect?: (dies: Die[]) => void
+}
+```
+
+### `GalleryOptions`
+
+```ts
+{
+  sceneOptions?:         WaferSceneOptions  // initial shared state
+  onSceneOptionsChange?: (opts: WaferSceneOptions) => void
+  cardPadding?:          number             // CSS-px padding inside each card canvas (default 6)
+  downloadFilename?:     string             // stem for the composite PNG filename (default 'wafer-gallery')
+}
+```
+
+### `GalleryController`
+
+```ts
+{
+  setItems(items: GalleryItem[]): void               // rebuild all cards
+  setOptions(opts: Partial<WaferSceneOptions>): void // sync shared options to all cards
+  getOptions(): WaferSceneOptions
+  destroy(): void
+}
+```
+
+### Gallery control bar buttons
+
+| Button | Action |
+| --- | --- |
+| Mode | Dropdown: plot mode for all cards |
+| Palette | Dropdown: colour scheme for all cards |
+| Rings | Toggle ring boundaries on all cards |
+| Quadrants | Toggle quadrant boundaries on all cards |
+| Labels | Toggle die labels on all cards |
+| Rotate | Rotate all cards 90° clockwise |
+| Flip H | Flip all cards horizontally |
+| Flip V | Flip all cards vertically |
+| Download gallery | Composite PNG of all cards at full HiDPI resolution |
+
+Per-card toolbars show only: box-select (when `onSelect` provided), zoom +/−, reset, download.
+
+### Click-to-detail modal
+
+Clicking anywhere on a card (outside its toolbar) opens a full-screen modal with
+`renderWaferMap` mounted at full resolution and with the complete toolbar. Shared
+scene options are passed through so the modal opens in the same display state as
+the gallery. Close with Esc, the × button, or clicking the backdrop.
+
+### Example
+
+```ts
+import { buildWaferMap } from '@paulrobins/wafermap';
+import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
+
+const items = waferIds.map(id => ({
+  wafer: sharedWafer,
+  dies:  diesByWafer[id],
+  label: id,
+  onClick:  (die) => showDieDetail(die, id),
+  onSelect: (selected) => showSelectionPanel(id, selected),
+}));
+
+const galleryEl = document.getElementById('gallery');
+const ctrl = renderWaferGallery(galleryEl, items, {
+  sceneOptions: { plotMode: 'hardbin', colorScheme: 'color' },
+  onSceneOptionsChange: (opts) => syncSidebarControls(opts),
+  downloadFilename: 'lot-overview',
+});
+
+// Rebuild after wafer selection changes:
+ctrl.setItems(newItems);
+
+// Sync from external control:
+ctrl.setOptions({ plotMode: 'value' });
+
+// Clean up:
+ctrl.destroy();
+```
 
 ---
 
