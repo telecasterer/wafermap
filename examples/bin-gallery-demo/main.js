@@ -5,6 +5,14 @@ const PITCH = 10;
 const WAFER_DIAMETER = 150;
 const WAFER_IDS = ['W01', 'W02', 'W03', 'W04', 'W05', 'W06'];
 
+const HBIN_DEFS = [
+  { bin: 1, name: 'Pass' },
+  { bin: 2, name: 'Leakage' },
+  { bin: 3, name: 'Vth Shift' },
+  { bin: 5, name: 'Contact Open' },
+  { bin: 7, name: 'Parametric Low' },
+];
+
 async function main() {
   const rows = await loadCsv('../../data/dummy-fulldata.csv');
 
@@ -39,16 +47,18 @@ async function main() {
 
   const uniqueBins = getUniqueBins(diesByWafer.flat());
   const numWafers = diesByWafer.length;
+  const hbinDefMap = new Map(HBIN_DEFS.map(b => [b.bin, b]));
 
-  // Build one gallery item per bin. All share valueRange so maps are comparable.
+  // Build one gallery item per hard bin. All share valueRange so maps are comparable.
   const items = uniqueBins.map(bin => {
     const dies = aggregateBinCounts(diesByWafer, bin);
     const totalOccurrences = dies.reduce((sum, d) => sum + (d.values?.[0] ?? 0), 0);
     const affectedPositions = dies.filter(d => (d.values?.[0] ?? 0) > 0).length;
+    const binName = hbinDefMap.get(bin)?.name ?? `Bin ${bin}`;
     return {
       wafer,
       dies,
-      label: `Bin ${bin} · ${affectedPositions} positions · ${totalOccurrences} total`,
+      label: `${binName} · ${affectedPositions} positions · ${totalOccurrences} total`,
     };
   });
 
@@ -56,7 +66,7 @@ async function main() {
     document.getElementById('gallery'),
     items,
     {
-      sceneOptions: { plotMode: 'value', valueRange: [0, numWafers], colorScheme: 'viridis' },
+      sceneOptions: { plotMode: 'value', valueRange: [0, numWafers], colorScheme: 'viridis', hbinDefs: HBIN_DEFS },
       downloadFilename: 'bin-occurrence-map',
     },
   );

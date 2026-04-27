@@ -147,6 +147,37 @@ export interface LotStackConfig {
   targetBin?: number;
 }
 
+/**
+ * Metadata for one test measurement — maps to `die.values[index]`.
+ * Provides a human-readable name and optional unit for display in tooltips,
+ * the colorbar, and the mode selector.
+ */
+export interface TestDef {
+  /** Index into `die.values[]` that this definition describes. */
+  index: number;
+  /** Human-readable test name, e.g. `"Idsat"` or `"Vth"`. */
+  name: string;
+  /** Physical unit string, e.g. `"A"`, `"V"`, `"Ω"`. Shown in tooltip and colorbar. */
+  unit?: string;
+}
+
+/**
+ * Metadata for one bin number (hard bin or soft bin).
+ * Hard bins and soft bins have independent number spaces (both 0–32767 per STDF V4)
+ * so separate `hbinDefs` and `sbinDefs` arrays are used — never mixed.
+ */
+export interface BinDef {
+  /** Numeric bin value this definition describes. */
+  bin: number;
+  /** Human-readable bin name, e.g. `"Pass"` or `"Contact Open"`. */
+  name: string;
+  /**
+   * Optional CSS color override for this bin.
+   * When set, overrides the active colour scheme for this bin value.
+   */
+  color?: string;
+}
+
 /** Input accepted by {@link buildWaferMap}.  All fields are optional. */
 export interface WaferMapInput {
   /** Per-die test results from the prober. */
@@ -170,6 +201,26 @@ export interface WaferMapInput {
   passBins?: number[];
   /** Lot-level stacking — collapse results from several wafers into a single map. */
   lotStack?: LotStackConfig;
+  /**
+   * Named test definitions — one per entry in `die.values[]`.
+   * When provided, tooltips show `"Idsat: 1.23 A"` instead of `"Values: 1.23"`,
+   * and the mode selector offers a per-test dropdown entry.
+   */
+  testDefs?: TestDef[];
+  /**
+   * Named hard bin definitions — one per distinct `bins[0]` value.
+   * Hard bins and soft bins have independent number spaces (STDF V4: both 0–32767),
+   * so they are defined separately.
+   * When provided, the bin legend and tooltips show names like `"Pass"` instead of `"Bin 1"`.
+   * A `color` on a `BinDef` overrides the active colour scheme for that bin.
+   */
+  hbinDefs?: BinDef[];
+  /**
+   * Named soft bin definitions — one per distinct `bins[1]` value.
+   * Soft bins are the logical/test-program classification; hard bins are the physical sort result.
+   * Both spaces range 0–32767 and may overlap — define them separately.
+   */
+  sbinDefs?: BinDef[];
 }
 
 /** Options forwarded to {@link buildScene}. */
@@ -239,6 +290,9 @@ interface Normalized {
   reticleOpts:  ReticleConfig  | undefined;
   lotStackOpts: LotStackConfig | undefined;
   passBins:     number[];
+  testDefs:  TestDef[] | undefined;
+  hbinDefs:  BinDef[]  | undefined;
+  sbinDefs:  BinDef[]  | undefined;
 }
 
 function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
@@ -251,6 +305,9 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
       reticleOpts:  undefined,
       lotStackOpts: undefined,
       passBins:     [1],
+      testDefs:  undefined,
+      hbinDefs:  undefined,
+      sbinDefs:  undefined,
     };
   }
   return {
@@ -261,6 +318,9 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
     reticleOpts:  input.reticleConfig,
     lotStackOpts: input.lotStack,
     passBins:     input.passBins ?? [1],
+    testDefs:     input.testDefs,
+    hbinDefs:     input.hbinDefs,
+    sbinDefs:     input.sbinDefs,
   };
 }
 
@@ -586,6 +646,9 @@ export function buildWaferMap(
       reticles,
       showReticle,
       plotMode: autoPlotMode(results, sceneOpts),
+      testDefs:  norm.testDefs,
+      hbinDefs: norm.hbinDefs,
+      sbinDefs: norm.sbinDefs,
     });
 
     return {
@@ -662,6 +725,9 @@ export function buildWaferMap(
     reticles,
     showReticle,
     plotMode: autoPlotMode(results, sceneOpts),
+    testDefs:  norm.testDefs,
+    hbinDefs:  norm.hbinDefs,
+    sbinDefs:  norm.sbinDefs,
   });
 
   return {

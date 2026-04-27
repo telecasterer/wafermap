@@ -4,6 +4,7 @@ import type { Wafer } from '../core/wafer.js';
 import type { Die } from '../core/dies.js';
 import { renderWaferMap } from './renderWaferMap.js';
 import type { WaferSceneOptions, WaferCanvasController } from './renderWaferMap.js';
+import type { BinDef } from '../renderer/buildWaferMap.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -379,11 +380,15 @@ export function renderWaferGallery(
     }
 
     legendEl.style.display = 'flex';
-    const scheme = getColorScheme(sharedOpts.colorScheme);
+    const scheme    = getColorScheme(sharedOpts.colorScheme);
     const activeBin = sharedOpts.highlightBin;
+    // Hard and soft bins have independent number spaces — pick the correct defs for the active mode.
+    const activeDefs = mode === 'softbin' ? sharedOpts.sbinDefs : sharedOpts.hbinDefs;
+    const binDefMap  = activeDefs ? new Map((activeDefs as BinDef[]).map(d => [d.bin, d])) : null;
 
     for (const bin of bins) {
       const isActive = activeBin === bin;
+      const binDef   = binDefMap?.get(bin);
       const entry = document.createElement('div');
       Object.assign(entry.style, {
         display:     'flex',
@@ -401,14 +406,14 @@ export function renderWaferGallery(
         width:        '13px',
         height:       '13px',
         flexShrink:   '0',
-        background:   scheme.forBin(bin),
+        background:   binDef?.color ?? scheme.forBin(bin),
         border:       isActive ? '2px solid #1a66cc' : '1px solid #ccc',
         borderRadius: '2px',
         boxSizing:    'border-box',
       });
 
       const lbl = document.createElement('span');
-      lbl.textContent = `Bin ${bin}`;
+      lbl.textContent = binDef?.name ? `${bin} · ${binDef.name}` : `Bin ${bin}`;
       Object.assign(lbl.style, {
         fontWeight: isActive ? '700' : '400',
         color:      isActive ? CLR.iconActive : '#444',

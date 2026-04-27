@@ -56,19 +56,21 @@ export interface ToCanvasResult {
   hitTarget:      CanvasHitTarget;
   /** The fitted viewport — useful as initial state for mountWaferCanvas. */
   viewport:       ViewportTransform;
-  /** Non-empty only when a bin legend was drawn (hardbin / stackedBins modes). */
+  /** Non-empty only when a bin legend was drawn (hardbin / softbin / stackedBins modes). */
   binLegendRows:  BinLegendRow[];
 }
 
-const COLORBAR_MODES   = new Set(['value', 'softbin', 'stackedValues']);
-const BIN_LEGEND_MODES = new Set(['hardbin', 'stackedBins']);
+const COLORBAR_MODES   = new Set(['value', 'stackedValues']);
+const BIN_LEGEND_MODES = new Set(['hardbin', 'softbin', 'stackedBins']);
 const COLORBAR_LABEL_FONT = '10px system-ui, sans-serif';
 const COLORBAR_STEPS = 128;
 const AXIS_TICK_FONT  = '10px system-ui, sans-serif';
 const AXIS_TICK_LEN   = 4;  // px
 const BIN_ROW_H       = 17; // px per legend row
 const BIN_SWATCH_SIZE = 11; // px
-const BIN_LEGEND_W    = 68; // px total right-side reserve for bin legend
+const BIN_LEGEND_W    = 110; // px total right-side reserve for bin legend
+const BIN_COUNT_W     = 28;  // px reserved on the right of the legend for the die count
+const BIN_LABEL_GAP   = 5;   // px gap between swatch and label
 
 export function toCanvas(
   canvas: HTMLCanvasElement,
@@ -263,6 +265,23 @@ export function toCanvas(
     ctx.stroke();
     ctx.textBaseline = 'bottom';
     ctx.fillText(fmt(vMin), cbX + colorbarWidth + tickLen + 2, cbY + cbH);
+
+    // Unit / test-name label above the bar (rotated 90°, reading bottom-to-top).
+    const testDef = scene.testDefs?.find(t => t.index === scene.testIndex);
+    const cbLabel = testDef
+      ? (testDef.unit ? `${testDef.name} (${testDef.unit})` : testDef.name)
+      : null;
+    if (cbLabel) {
+      ctx.save();
+      ctx.fillStyle   = '#555';
+      ctx.font        = COLORBAR_LABEL_FONT;
+      ctx.textAlign   = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.translate(cbX - 4, cbY + cbH / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText(cbLabel, 0, 0);
+      ctx.restore();
+    }
   }
 
   // ── Draw bin legend ────────────────────────────────────────────────────────
@@ -284,7 +303,10 @@ export function toCanvas(
 
     const legendX    = cssW - padding - BIN_LEGEND_W + 4;
     const swatchX    = legendX;
-    const labelX     = legendX + BIN_SWATCH_SIZE + 5;
+    const labelX     = legendX + BIN_SWATCH_SIZE + BIN_LABEL_GAP;
+    const countX     = cssW - padding + 2;
+    // Available width for the label text: total legend minus swatch, gap, and count column.
+    const maxLabelW  = BIN_LEGEND_W - BIN_SWATCH_SIZE - BIN_LABEL_GAP - BIN_COUNT_W;
     const maxRows    = Math.floor((cssH - 2 * padding) / BIN_ROW_H);
     const overflow   = entries.length > maxRows ? entries.length - (maxRows - 1) : 0;
     const visible    = overflow > 0 ? entries.slice(0, maxRows - 1) : entries;
@@ -293,31 +315,52 @@ export function toCanvas(
     ctx.save();
     ctx.font = COLORBAR_LABEL_FONT;
 
-    for (const [bin, count] of visible) {
-      const isActive = _activeBin === bin;
-      const swatchY  = rowY + Math.round((BIN_ROW_H - BIN_SWATCH_SIZE) / 2);
+    // Hard and soft bins have independent number spaces — pick the correct def array for the mode.
+    const activeDefs = scene.plotMode === 'softbin' ? scene.sbinDefs : scene.hbinDefs;
+    const binDefMap  = activeDefs ? new Map(activeDefs.map(d => [d.bin, d])) : null;
 
-      // Swatch fill.
-      ctx.fillStyle = scheme.forBin(bin);
+    // Truncate text to fit maxLabelW pixels, appending ellipsis if needed.
+    function truncate(text: string, maxW: number): string {
+      if (ctx.measureText(text).width <= maxW) return text;
+      let lo = 0, hi = text.length;
+      const ellipsis = '…';
+      const ellW = ctx.measureText(ellipsis).width;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (ctx.measureText(text.slice(0, mid)).width + ellW <= maxW) lo = mid;
+        else hi = mid - 1;
+      }
+      return lo === 0 ? ellipsis : text.slice(0, lo) + ellipsis;
+    }
+
+    for (const [bin, count] of visible) {
+      const isActive  = _activeBin === bin;
+      const swatchY   = rowY + Math.round((BIN_ROW_H - BIN_SWATCH_SIZE) / 2);
+      const binDef    = binDefMap?.get(bin);
+      const midY      = rowY + BIN_ROW_H / 2;
+
+      // Swatch fill — use BinDef color override if present.
+      ctx.fillStyle = binDef?.color ?? scheme.forBin(bin);
       ctx.fillRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
 
-      // Swatch border — thicker + dark when active.
+      // Swatch border — thicker + blue when active.
       ctx.strokeStyle = isActive ? '#1a66cc' : 'rgba(0,0,0,0.25)';
       ctx.lineWidth   = isActive ? 2 : 0.75;
       ctx.strokeRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
 
-      // Label.
+      // Label — truncated to fit within the label column.
+      const rawLabel   = binDef?.name ? `${bin} · ${binDef.name}` : `Bin ${bin}`;
       ctx.fillStyle    = isActive ? '#1a66cc' : '#333';
       ctx.font         = isActive ? 'bold 10px system-ui, sans-serif' : COLORBAR_LABEL_FONT;
       ctx.textAlign    = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`Bin ${bin}`, labelX, rowY + BIN_ROW_H / 2);
+      ctx.fillText(truncate(rawLabel, maxLabelW), labelX, midY);
 
-      // Die count (muted, right-aligned within label space).
+      // Die count — right-aligned, inside the legend reserve.
       ctx.fillStyle    = '#999';
       ctx.font         = COLORBAR_LABEL_FONT;
       ctx.textAlign    = 'right';
-      ctx.fillText(String(count), cssW - padding + 2, rowY + BIN_ROW_H / 2);
+      ctx.fillText(String(count), countX, midY);
 
       binLegendRows.push({ bin, y: rowY, h: BIN_ROW_H });
       rowY += BIN_ROW_H;

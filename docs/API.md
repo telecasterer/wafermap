@@ -83,6 +83,9 @@ buildWaferMap({
   reticleConfig?: ReticleConfig,   // stepper field grid overlay
   lotStack?:     LotStackConfig,   // collapse multiple wafers into one aggregated map
   passBins?:     number[],         // bins counted as pass for yield (default [1])
+  testDefs?:     TestDef[],        // named test definitions — one per values[] slot
+  hbinDefs?:     BinDef[],         // named hard bin definitions — one per distinct bins[0] value
+  sbinDefs?:     BinDef[],         // named soft bin definitions — one per distinct bins[1] value
 })
 ```
 
@@ -191,6 +194,34 @@ passBins?: number[]   // default [1]  (industry convention: bin 1 = pass)
 ```
 
 Bin values that count as pass for yield calculation.  Set to `[]` to suppress yield.
+
+#### `TestDef`
+
+Named definition for one `die.values[]` slot.  When provided, tooltips show `"Idsat: 1.23e-3 A"` instead of `"Values: 1.23e-3"`, and the toolbar mode dropdown offers one entry per test.
+
+```ts
+{
+  index: number   // which values[] slot this describes
+  name:  string   // e.g. "Idsat", "Vth", "Continuity"
+  unit?: string   // e.g. "A", "V", "Ω" — shown in tooltip and colorbar label
+}
+```
+
+#### `BinDef`
+
+Named definition for one bin number.  Used for both hard bin (`hbinDefs`) and soft bin (`sbinDefs`) — the shape is identical but the number spaces are independent.
+
+Per STDF V4, hard bins and soft bins each range 0–32767.  Bin 1 in hardbin-space and bin 1 in softbin-space are different things and may have different names — always pass them as separate arrays.
+
+```ts
+{
+  bin:    number   // the numeric bin value this defines
+  name:   string   // e.g. "Pass", "Contact Open", "Vth - Hi NMOS"
+  color?: string   // optional CSS color override, e.g. "#2ecc71" — overrides the active colour scheme
+}
+```
+
+**Hard bins** (`hbinDefs`) are the physical sort result — where the part goes on the handler.  **Soft bins** (`sbinDefs`) are the logical test-program classification — the failure category as determined by the test algorithm, used for debug and yield analysis.  Many soft bins typically map to one hard bin.
 
 ### Return value
 
@@ -401,6 +432,11 @@ Scene display options controllable via the toolbar or programmatically:
   rotation?:               0 | 90 | 180 | 270
   flipX?:                  boolean
   flipY?:                  boolean
+  testDefs?:               TestDef[]         // named test definitions — drives mode dropdown entries
+  hbinDefs?:               BinDef[]          // hard bin names/colors (bins[0], 0–32767 space)
+  sbinDefs?:               BinDef[]          // soft bin names/colors (bins[1], 0–32767 space — independent)
+  testIndex?:              number            // which values[] slot to show in 'value' mode; default 0
+  binIndex?:               number            // which bins[] slot to show in bin modes; default 0
 }
 ```
 
@@ -576,9 +612,14 @@ the gallery. Close with Esc, the × button, or clicking the backdrop.
 ### Shared bin legend
 
 For `hardbin`, `softbin`, and `stackedBins` modes a shared legend strip is rendered
-between the control bar and the card grid — one coloured swatch + `Bin N` label per
-unique bin across all items. The legend is hidden for `value` and `stackedValues`
-(those modes use a per-card colorbar instead).
+between the control bar and the card grid — one coloured swatch + label per unique
+bin across all items. The legend is hidden for `value` and `stackedValues` (those
+modes use a per-card colorbar instead).
+
+When `hbinDefs` or `sbinDefs` are provided via `sceneOptions`, the legend uses the
+correct definition array for the active mode — `hbinDefs` for hardbin, `sbinDefs`
+for softbin. Because hard and soft bin number spaces are independent (STDF V4: both
+0–32767), the two arrays are kept separate and never merged.
 
 Clicking a bin entry calls `setOptions({ highlightBin: bin })`, which dims all
 non-matching bins on every card simultaneously. Clicking the active entry clears
@@ -752,13 +793,13 @@ interface ToCanvasOptions {
 
 | Mode | Right-side legend |
 | --- | --- |
-| `value`, `softbin`, `stackedValues` | Continuous colorbar (gradient strip with min/max ticks) |
-| `hardbin`, `stackedBins` | Bin legend: one swatch + label per unique bin; overflows show `"+ N more"` |
+| `value`, `stackedValues` | Continuous colorbar (gradient strip with min/max ticks) |
+| `hardbin`, `softbin`, `stackedBins` | Bin legend: one swatch + label per unique bin; overflows show `"+ N more"` |
 
 Returns `{ hitTarget, viewport, binLegendRows }`:
 - `hitTarget.getDieAtPoint(x, y): Die | null` — hit-test a CSS-pixel position
 - `viewport` — the auto-fitted viewport transform (useful as initial state for custom zoom/pan)
-- `binLegendRows` — `{ bin, y, h }[]` for hit-testing legend row clicks (non-empty for hardbin/stackedBins)
+- `binLegendRows` — `{ bin, y, h }[]` for hit-testing legend row clicks (non-empty for hardbin/softbin/stackedBins)
 
 ```ts
 const result  = buildWaferMap({ results, waferConfig, dieConfig });
@@ -982,10 +1023,15 @@ interface SceneOptions {
   valueRange?:             [number, number]
   interactiveTransform?:   { rotation?: number; flipX?: boolean; flipY?: boolean }
   reticles?:               Reticle[]
+  testDefs?:               TestDef[]   // named test definitions — drives mode dropdown and tooltip labels
+  hbinDefs?:               BinDef[]    // named hard bin definitions (bins[0] space, 0–32767)
+  sbinDefs?:               BinDef[]    // named soft bin definitions (bins[1] space, 0–32767 — independent)
+  testIndex?:              number      // which values[] slot to display in 'value' mode; default 0
+  binIndex?:               number      // which bins[] slot to display in 'hardbin'/'softbin' mode; default 0
 }
 ```
 
-Returns `Scene` with `rectangles`, `texts`, `hoverPoints`, `overlays`, `plotMode`, `colorScheme`, `metadata`, `dies`, `valueRange`.
+Returns `Scene` with `rectangles`, `texts`, `hoverPoints`, `overlays`, `plotMode`, `colorScheme`, `metadata`, `dies`, `valueRange`, `testDefs`, `hbinDefs`, `sbinDefs`, `testIndex`, `binIndex`.
 
 ---
 

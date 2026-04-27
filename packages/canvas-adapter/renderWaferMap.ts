@@ -4,6 +4,7 @@ import { listColorSchemes } from '../renderer/colorSchemes.js';
 import type { Wafer } from '../core/wafer.js';
 import type { Die } from '../core/dies.js';
 import { toCanvas, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
+import type { TestDef, BinDef } from '../renderer/buildWaferMap.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -23,6 +24,21 @@ export interface WaferSceneOptions {
   rotation?:               0 | 90 | 180 | 270;
   flipX?:                  boolean;
   flipY?:                  boolean;
+  /**
+   * Which `values[]` index to display in `value` plot mode. Default `0`.
+   * Controlled by the mode dropdown when `testDefs` are defined.
+   */
+  testIndex?:              number;
+  /**
+   * Which `bins[]` index to display in `hardbin` / `softbin` plot modes. Default `0`.
+   */
+  binIndex?:               number;
+  /** Named test definitions — one per `values[]` entry. Shown in mode dropdown and tooltip. */
+  testDefs?:               TestDef[];
+  /** Named hard bin definitions — one per distinct `bins[0]` value. Independent number space from soft bins. */
+  hbinDefs?:               BinDef[];
+  /** Named soft bin definitions — one per distinct `bins[1]` value. Independent number space from hard bins. */
+  sbinDefs?:               BinDef[];
 }
 
 export interface MountOptions extends Omit<ToCanvasOptions, '_viewport'> {
@@ -68,42 +84,47 @@ export interface WaferCanvasController {
   destroy(): void;
 }
 
-// ── SVG icon set — matches Plotly modebar visual vocabulary where applicable ───
-// Plotly-style filled square button used for zoom+/zoom− (white symbol on grey fill).
-function filledSquareIcon(inner: string): string {
-  return `<svg viewBox="0 0 24 24" width="16" height="16"><rect x="2" y="2" width="20" height="20" rx="2" fill="#b0b8c8"/><g stroke="#fff" stroke-width="2.2" stroke-linecap="round">${inner}</g></svg>`;
+// ── SVG sprite — Plotly icon set + wafer-specific icons ───────────────────────
+// Injected once into <body>; icons referenced via <use href="#wmap-icon-*">.
+const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="wmap-icon-camera" viewBox="0 0 1000 1000"><path d="M500 300c-110 0-200 90-200 200s90 200 200 200 200-90 200-200-90-200-200-200zm0 320c-66 0-120-54-120-120s54-120 120-120 120 54 120 120-54 120-120 120zm300-320h-120l-60-80h-240l-60 80h-120c-44 0-80 36-80 80v360c0 44 36 80 80 80h600c44 0 80-36 80-80v-360c0-44-36-80-80-80z"/></symbol>
+  <symbol id="wmap-icon-zoom" viewBox="0 0 1000 1000"><path d="M100 100h300v80H180v220h-80V100zm500 0h300v300h-80V180H600v-80zM100 600h80v220h220v80H100V600zm720 0h80v300H600v-80h220V600z"/></symbol>
+  <symbol id="wmap-icon-pan" viewBox="0 0 1000 1000"><path d="M500 100l120 120h-80v160h160v-80l120 120-120 120v-80h-160v160h80l-120 120-120-120h80v-160h-160v80l-120-120 120-120v80h160v-160h-80z"/></symbol>
+  <symbol id="wmap-icon-zoom-in" viewBox="0 0 1000 1000"><path d="M450 250v150h-150v100h150v150h100v-150h150v-100h-150v-150h-100zm50-200c-220 0-400 180-400 400s180 400 400 400 400-180 400-400-180-400-400-400zm0 720c-176 0-320-144-320-320s144-320 320-320 320 144 320 320-144 320-320 320z"/></symbol>
+  <symbol id="wmap-icon-zoom-out" viewBox="0 0 1000 1000"><path d="M300 450v100h400v-100H300zm200-400c-220 0-400 180-400 400s180 400 400 400 400-180 400-400-180-400-400-400zm0 720c-176 0-320-144-320-320s144-320 320-320 320 144 320 320-144 320-320 320z"/></symbol>
+  <symbol id="wmap-icon-home" viewBox="0 0 1000 1000"><path d="M500 150l350 300h-100v300h-200v-200h-100v200h-200v-300h-100z"/></symbol>
+  <symbol id="wmap-icon-select-box" viewBox="0 0 1000 1000"><path d="M200 200h600v600h-600zM300 300v400h400v-400z"/></symbol>
+</svg>`;
+
+function ensureSprite(): void {
+  if (!document.getElementById('wmap-sprite')) {
+    const div = document.createElement('div');
+    div.id = 'wmap-sprite';
+    div.innerHTML = SPRITE;
+    document.body.insertBefore(div, document.body.firstChild);
+  }
+}
+
+function plotlyIcon(id: string): string {
+  return `<svg width="16" height="16" viewBox="0 0 1000 1000" fill="currentColor"><use href="#wmap-icon-${id}"/></svg>`;
 }
 
 const ICONS: Record<string, string> = {
-  // Camera: download as PNG — Plotly puts this first/leftmost
-  download:  `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`,
-  // Zoom region: dashed box with corner brackets — matches Plotly zoom icon
-  zoomMode:  `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3H3v2"/><path d="M19 3h2v2"/><path d="M5 21H3v-2"/><path d="M19 21h2v-2"/><rect x="3" y="3" width="18" height="18" stroke-dasharray="3 2" stroke-width="1.4"/></svg>`,
-  // Pan: 4-direction move cross — matches Plotly pan icon
-  pan:       `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><line x1="3" y1="12" x2="21" y2="12"/><polyline points="8 7 12 3 16 7"/><polyline points="8 17 12 21 16 17"/><polyline points="7 8 3 12 7 16"/><polyline points="17 8 21 12 17 16"/></svg>`,
-  // Zoom in: white + on grey square — matches Plotly zoom_in
-  zoomIn:    filledSquareIcon('<line x1="12" y1="7" x2="12" y2="17"/><line x1="7" y1="12" x2="17" y2="12"/>'),
-  // Zoom out: white − on grey square — matches Plotly zoom_out
-  zoomOut:   filledSquareIcon('<line x1="7" y1="12" x2="17" y2="12"/>'),
-  // Reset/autoscale: house icon — matches Plotly reset_axes
-  reset:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 9.5V20h5v-5h4v5h5V9.5"/></svg>`,
-  // Box select: dashed rect with corner marks — matches Plotly select icon
-  boxSelect: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3H3v2"/><path d="M19 3h2v2"/><path d="M5 21H3v-2"/><path d="M19 21h2v-2"/><rect x="3" y="3" width="18" height="18" stroke-dasharray="3 2" stroke-width="1.4"/></svg>`,
-  // Rotate CW: arc going clockwise (arrow at bottom-right, arc sweeps right)
+  download:  plotlyIcon('camera'),
+  zoomMode:  plotlyIcon('zoom'),
+  pan:       plotlyIcon('pan'),
+  zoomIn:    plotlyIcon('zoom-in'),
+  zoomOut:   plotlyIcon('zoom-out'),
+  reset:     plotlyIcon('home'),
+  boxSelect: plotlyIcon('select-box'),
+  // Wafer-specific icons — no Plotly equivalent
   rotateCW:  `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9"/><polyline points="12 3 8 3 8 7"/></svg>`,
-  // Flip horizontal: vertical axis with left/right arrows
   flipH:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><polyline points="7 8 3 12 7 16"/><polyline points="17 8 21 12 17 16"/></svg>`,
-  // Flip vertical: horizontal axis with up/down arrows
   flipV:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><polyline points="8 7 12 3 16 7"/><polyline points="8 17 12 21 16 17"/></svg>`,
-  // Ring boundaries: concentric circles (wafer-specific)
   rings:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg>`,
-  // Quadrant boundaries: circle divided by crosshairs (wafer-specific)
   quadrants: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="3" y1="12" x2="21" y2="12"/></svg>`,
-  // Die labels: "A" letter over a die grid square
   labels:    `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 17l3-9 3 9"/><line x1="10.5" y1="13.5" x2="13.5" y2="13.5"/></svg>`,
-  // Colour palette: paint palette shape
   palette:   `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C7 3 3 7 3 12c0 4.4 3.1 8 7.3 8.8.4.1.7-.3.7-.7v-1.5c-2.8.6-3.4-1.4-3.4-1.4-.4-1.1-1.1-1.4-1.1-1.4-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8.1-.6.3-1.1.6-1.3-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.8 1a9.7 9.7 0 0 1 5 0c1.9-1.3 2.8-1 2.8-1 .5 1.4.2 2.4.1 2.7.7.7 1 1.6 1 2.7 0 3.9-2.4 4.7-4.6 5 .4.3.7 1 .7 2v3c0 .4.3.8.7.7C17.9 20 21 16.4 21 12c0-5-4-9-9-9z"/></svg>`,
-  // Plot mode: four die squares (wafer-specific)
   mode:      `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
 };
 
@@ -198,6 +219,11 @@ export function renderWaferMap(
       showQuadrantBoundaries: so.showQuadrantBoundaries,
       ringCount:              so.ringCount,
       highlightBin:           so.highlightBin,
+      testIndex:              so.testIndex,
+      binIndex:               so.binIndex,
+      testDefs:               so.testDefs,
+      hbinDefs:               so.hbinDefs,
+      sbinDefs:               so.sbinDefs,
       interactiveTransform: {
         rotation: so.rotation ?? 0,
         flipX:    so.flipX   ?? false,
@@ -253,6 +279,7 @@ export function renderWaferMap(
         parent.style.position = 'relative';
       }
 
+      ensureSprite();
       toolbar = document.createElement('div');
       toolbar.dataset.wmapToolbar = '1';
       Object.assign(toolbar.style, {
@@ -450,12 +477,82 @@ export function renderWaferMap(
       if (toolbarControls !== 'view-only') {
         toolbar.appendChild(makeSep());
 
-        const btnMode = makeDropdown(
-          'mode', 'Plot mode',
-          ALL_MODES.map(m => ({ value: m, label: MODE_LABELS[m] })),
-          () => sceneOpts.plotMode ?? 'hardbin',
-          v => applyOpts({ plotMode: v }),
-        );
+        // Mode dropdown: when testDefs are defined, show one entry per named test
+        // plus the bin modes. Selecting a named test sets plotMode:'value' + testIndex.
+        // Selecting a bin mode sets plotMode to that mode and clears testIndex.
+        type ModeEntry = { plotMode: PlotMode; testIndex?: number; label: string };
+
+        function isCurrentEntry(e: ModeEntry): boolean {
+          if (e.plotMode !== (sceneOpts.plotMode ?? 'hardbin')) return false;
+          if (e.plotMode === 'value') return (sceneOpts.testIndex ?? 0) === (e.testIndex ?? 0);
+          return true;
+        }
+
+        const btnMode = makeBtn('mode', 'Plot mode', () => {
+          if (openMenu) { openMenu.remove(); openMenu = null; return; }
+
+          const testDefs = currentScene.testDefs;
+          const entries: ModeEntry[] = testDefs?.length
+            ? testDefs.map(t => ({ plotMode: 'value' as PlotMode, testIndex: t.index, label: t.unit ? `${t.name} (${t.unit})` : t.name }))
+            : [{ plotMode: 'value' as PlotMode, label: MODE_LABELS.value }];
+          entries.push(
+            { plotMode: 'hardbin',       label: MODE_LABELS.hardbin },
+            { plotMode: 'softbin',       label: MODE_LABELS.softbin },
+            { plotMode: 'stackedValues', label: MODE_LABELS.stackedValues },
+            { plotMode: 'stackedBins',   label: MODE_LABELS.stackedBins },
+          );
+
+          const menu = document.createElement('div');
+          const btnRect = btnMode.getBoundingClientRect();
+          Object.assign(menu.style, {
+            position:      'fixed',
+            top:           `${btnRect.bottom + 4}px`,
+            left:          `${btnRect.left}px`,
+            background:    CLR.menuBg,
+            border:        `1px solid ${CLR.menuBorder}`,
+            borderRadius:  '4px',
+            boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
+            zIndex:        '9998',
+            minWidth:      '160px',
+            padding:       '4px 0',
+            pointerEvents: 'auto',
+          });
+
+          for (const entry of entries) {
+            const row = document.createElement('div');
+            row.textContent = entry.label;
+            const active = isCurrentEntry(entry);
+            Object.assign(row.style, {
+              padding:    '6px 14px',
+              fontSize:   '12px',
+              cursor:     'pointer',
+              color:      active ? CLR.iconActive : '#333',
+              fontWeight: active ? '700' : '400',
+              background: active ? CLR.menuActive : 'transparent',
+              whiteSpace: 'nowrap',
+            });
+            row.addEventListener('mouseenter', () => {
+              if (!isCurrentEntry(entry)) row.style.background = CLR.menuHover;
+            });
+            row.addEventListener('mouseleave', () => {
+              row.style.background = isCurrentEntry(entry) ? CLR.menuActive : 'transparent';
+            });
+            row.addEventListener('click', e => {
+              e.stopPropagation();
+              if (entry.testIndex !== undefined) {
+                applyOpts({ plotMode: 'value', testIndex: entry.testIndex });
+              } else {
+                applyOpts({ plotMode: entry.plotMode, testIndex: undefined });
+              }
+              menu.remove();
+              openMenu = null;
+            });
+            menu.appendChild(row);
+          }
+
+          document.body.appendChild(menu);
+          openMenu = menu;
+        });
         const btnPalette = makeDropdown(
           'palette', 'Colour scheme',
           listColorSchemes().map(s => ({ value: s.name, label: s.label })),
