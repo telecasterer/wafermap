@@ -65,6 +65,19 @@ const SBIN_DEFS = [
   { bin: 207, name: 'Param - Gain Low' },
 ];
 
+// Simulate recontact retests on W01: duplicate a handful of failing die positions
+// to demonstrate die.retestCount and the "Retests: N" tooltip.
+function addSyntheticRetests(results) {
+  const failing = results.filter(r => r.bins[0] !== 1).slice(0, 8);
+  // Each retest entry updates the bin to Pass (bin 1), as would happen after recontact.
+  const retests = failing.map(r => ({
+    ...r,
+    bins:   [1, 10],
+    values: r.values.map(v => v * 1.02),
+  }));
+  return [...results, ...retests];
+}
+
 async function main() {
   const rows = await loadCsv('../../data/dummy-fulldata.csv');
   const items = [];
@@ -73,13 +86,22 @@ async function main() {
     const waferRows = rows.filter((row) => row.wafer === waferId);
     const firstRow = waferRows[0] ?? {};
 
+    let results = waferRows.map((row) => ({
+      x: Number(row.x),
+      y: Number(row.y),
+      bins:   [Number(row.hbin), Number(row.sbin)],
+      values: [Number(row.testA), Number(row.testB), Number(row.testC)],
+    }));
+
+    // W01 demonstrates retestPolicy: add synthetic recontact retests so that
+    // die.retestCount appears on affected dies and shows "Retests: N" in the tooltip.
+    if (waferId === 'W01') results = addSyntheticRetests(results);
+
     const result = buildWaferMap({
-      results: waferRows.map((row) => ({
-        x: Number(row.x),
-        y: Number(row.y),
-        bins:   [Number(row.hbin), Number(row.sbin)],
-        values: [Number(row.testA), Number(row.testB), Number(row.testC)],
-      })),
+      results,
+      // 'last' (default) keeps the most recent result — the retest pass wins over the original fail.
+      // Switch to 'first' to keep the original test result instead.
+      retestPolicy: 'last',
       waferConfig: {
         diameter: 150,
         notch: { type: 'bottom' },

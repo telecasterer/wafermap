@@ -23,6 +23,8 @@ export interface Die {
   partial?: boolean;     // true if die straddles the wafer boundary
   edgeExcluded?: boolean; // true if die centre falls within the edge exclusion zone
   probeIndex?: number;   // assigned by applyProbeSequence
+  /** Number of times this die position appeared in the input results. Only set when > 1. */
+  retestCount?: number;
 }
 
 /**

@@ -83,6 +83,7 @@ buildWaferMap({
   reticleConfig?: ReticleConfig,   // stepper field grid overlay
   lotStack?:     LotStackConfig,   // collapse multiple wafers into one aggregated map
   passBins?:     number[],         // bins counted as pass for yield (default [1])
+  retestPolicy?: 'last' | 'first', // how to handle multiple results at the same (x,y); default 'last'
   testDefs?:     TestDef[],        // named test definitions — one per values[] slot
   hbinDefs?:     BinDef[],         // named hard bin definitions — one per distinct bins[0] value
   sbinDefs?:     BinDef[],         // named soft bin definitions — one per distinct bins[1] value
@@ -105,6 +106,10 @@ A single die record from wafer test equipment.
 ```
 
 Single-channel data is just `values: [0.95]` — an array with one element.
+
+When a die position appears more than once in the `results` array (a retest), the
+`retestPolicy` field on `WaferMapInput` controls which result is kept.  The
+`die.retestCount` field always records how many times that position appeared.
 
 #### `WaferOptions`
 
@@ -194,6 +199,37 @@ passBins?: number[]   // default [1]  (industry convention: bin 1 = pass)
 ```
 
 Bin values that count as pass for yield calculation.  Set to `[]` to suppress yield.
+
+#### `retestPolicy`
+
+```ts
+retestPolicy?: 'last' | 'first'   // default 'last'
+```
+
+Controls how the library handles multiple results for the same die position (retests).
+In wafer test it is common for a die to be tested more than once — for example after
+a recontact, a temperature retest, or a continuity retest.
+
+| Policy | Behaviour |
+| ------ | --------- |
+| `'last'` (default) | Keep the most recent result — the last entry in `results` for that position |
+| `'first'` | Keep the earliest result — the first entry in `results` for that position |
+
+Regardless of which policy is active, `die.retestCount` is always set on any die that
+appeared more than once in the input.  Use it to identify retested dies in your own
+analysis without needing to re-scan the raw results.
+
+```ts
+// Last result wins (default — no field needed):
+buildWaferMap({ results })
+
+// Explicitly keep first result:
+buildWaferMap({ results, retestPolicy: 'first' })
+
+// Check how many retests occurred after the map is built:
+result.dies.filter(d => d.retestCount !== undefined)
+  .forEach(d => console.log(`Die (${d.i},${d.j}) tested ${d.retestCount} times`));
+```
 
 #### `TestDef`
 
@@ -373,6 +409,25 @@ const { wafer, dies } = buildWaferMap({
   results:   data,
   dieConfig: { width: 10, height: 10, coordinateOrigin: { type: 'UL' } },
 });
+```
+
+**Retests — keep first result, surface retest count in tooltip:**
+
+```ts
+// Raw results may include the same (x, y) more than once.
+// 'first' keeps the initial test; 'last' (default) keeps the most recent.
+const { wafer, dies } = buildWaferMap({
+  results:      rawResults,
+  retestPolicy: 'first',
+  waferConfig:  { diameter: 300, notch: { type: 'bottom' } },
+  dieConfig:    { width: 10, height: 10 },
+});
+
+// die.retestCount is set (to the total count) whenever a position was retested.
+const retested = dies.filter(d => d.retestCount !== undefined);
+console.log(`${retested.length} die positions were retested`);
+// e.g. → "47 die positions were retested"
+// The built-in tooltip automatically shows "Retests: N" for retested dies.
 ```
 
 ### Post-enrichment
@@ -1092,6 +1147,7 @@ chart.on('plotly_click', ev => {
   partial?:      boolean   // straddles the wafer boundary
   edgeExcluded?: boolean   // centre falls within the edge exclusion zone
   probeIndex?:   number
+  retestCount?:  number    // set when this position appeared more than once in input results
 }
 ```
 

@@ -279,6 +279,7 @@ function buildHoverText(
     }
   }
 
+  if (die.retestCount !== undefined) lines.push(`Retests: ${die.retestCount}`);
   if (die.partial) lines.push('<i>partial die</i>');
   if (die.probeIndex !== undefined) lines.push(`Probe: #${die.probeIndex}`);
 

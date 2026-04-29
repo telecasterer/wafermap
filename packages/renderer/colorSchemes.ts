@@ -26,6 +26,7 @@ export interface ColorScheme {
 // ── Registry ──────────────────────────────────────────────────────────────────
 
 const registry = new Map<string, ColorScheme>();
+const aliases = new Set<string>();
 
 /**
  * Register a named colour scheme, making it available to buildScene via the
@@ -53,7 +54,9 @@ export function getColorScheme(name?: string): ColorScheme {
 
 /** Return all registered schemes as { name, label } pairs, in insertion order. */
 export function listColorSchemes(): Array<{ name: string; label: string }> {
-  return [...registry.entries()].map(([name, s]) => ({ name, label: s.label }));
+  return [...registry.entries()]
+    .filter(([name]) => !aliases.has(name))
+    .map(([name, s]) => ({ name, label: s.label }));
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -90,6 +93,7 @@ registerColorScheme('default', {
 });
 
 // 'color' kept as an alias so existing code that passed colorScheme:'color' still works.
+aliases.add('color');
 registerColorScheme('color', {
   label: 'Default',
   forBin: binArray(HARD_BIN_COLORS),

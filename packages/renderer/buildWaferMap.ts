@@ -27,6 +27,12 @@ export interface DieResult {
   values?: number[];
   /** Bin assignments — bins[0] is the hard bin, bins[1] the soft bin, etc. */
   bins?: number[];
+  /**
+   * Number of times this die position appeared in the input results array.
+   * Populated automatically by `buildWaferMap` — do not set manually.
+   * Only present when the die was tested more than once.
+   */
+  retestCount?: number;
 }
 
 /** @deprecated Use {@link DieResult} */
@@ -202,6 +208,19 @@ export interface WaferMapInput {
   /** Lot-level stacking — collapse results from several wafers into a single map. */
   lotStack?: LotStackConfig;
   /**
+   * How to handle multiple `DieResult` entries for the same die position (retests).
+   *
+   * - `'last'`  (default) — keep the most recent result. Matches pre-existing behaviour
+   *              and is appropriate when records are in probe order and the final touch
+   *              is the authoritative result.
+   * - `'first'` — keep the earliest result. Useful when the first touch is canonical
+   *              or when the array is already sorted best-first.
+   *
+   * Regardless of policy, `die.retestCount` is set on any die that was tested more than
+   * once, so retest hotspots are always visible.
+   */
+  retestPolicy?: 'last' | 'first';
+  /**
    * Named test definitions — one per entry in `die.values[]`.
    * When provided, tooltips show `"Idsat: 1.23 A"` instead of `"Values: 1.23"`,
    * and the mode selector offers a per-test dropdown entry.
@@ -290,9 +309,10 @@ interface Normalized {
   reticleOpts:  ReticleConfig  | undefined;
   lotStackOpts: LotStackConfig | undefined;
   passBins:     number[];
-  testDefs:  TestDef[] | undefined;
-  hbinDefs:  BinDef[]  | undefined;
-  sbinDefs:  BinDef[]  | undefined;
+  testDefs:     TestDef[] | undefined;
+  hbinDefs:     BinDef[]  | undefined;
+  sbinDefs:     BinDef[]  | undefined;
+  retestPolicy: 'last' | 'first';
 }
 
 function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
@@ -305,9 +325,10 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
       reticleOpts:  undefined,
       lotStackOpts: undefined,
       passBins:     [1],
-      testDefs:  undefined,
-      hbinDefs:  undefined,
-      sbinDefs:  undefined,
+      testDefs:     undefined,
+      hbinDefs:     undefined,
+      sbinDefs:     undefined,
+      retestPolicy: 'last',
     };
   }
   return {
@@ -321,6 +342,7 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
     testDefs:     input.testDefs,
     hbinDefs:     input.hbinDefs,
     sbinDefs:     input.sbinDefs,
+    retestPolicy: input.retestPolicy ?? 'last',
   };
 }
 
@@ -533,13 +555,39 @@ function applyEdgeExclusion(dies: Die[], wafer: Wafer, exclusionMm: number): Die
   });
 }
 
+// ── Retest deduplication ──────────────────────────────────────────────────────
+
+function applyRetestPolicy(
+  results: DieResult[],
+  policy: 'last' | 'first',
+): DieResult[] {
+  const counts = new Map<string, number>();
+  for (const d of results) {
+    const key = `${d.x},${d.y}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  const winners = new Map<string, DieResult>();
+  for (const d of results) {
+    const key = `${d.x},${d.y}`;
+    if (policy === 'first' && winners.has(key)) continue;
+    winners.set(key, d);
+  }
+
+  return Array.from(winners.values()).map(d => {
+    const count = counts.get(`${d.x},${d.y}`) ?? 1;
+    return count > 1 ? { ...d, retestCount: count } : d;
+  });
+}
+
 // ── Data attachment ───────────────────────────────────────────────────────────
 
 function attachData(die: Die, pt: DieResult): Die {
   return {
     ...die,
-    ...(pt.values !== undefined ? { values: pt.values } : {}),
-    ...(pt.bins   !== undefined ? { bins:   pt.bins   } : {}),
+    ...(pt.values      !== undefined ? { values:      pt.values      } : {}),
+    ...(pt.bins        !== undefined ? { bins:        pt.bins        } : {}),
+    ...(pt.retestCount !== undefined ? { retestCount: pt.retestCount } : {}),
   };
 }
 
@@ -607,9 +655,10 @@ export function buildWaferMap(
   const norm = normalizeInput(input);
   const { debug: _debug, ...sceneOpts } = options ?? {};
 
-  const results: DieResult[] = norm.lotStackOpts
-    ? collapseLotStack(norm.lotStackOpts)
-    : norm.results;
+  const results: DieResult[] = applyRetestPolicy(
+    norm.lotStackOpts ? collapseLotStack(norm.lotStackOpts) : norm.results,
+    norm.retestPolicy,
+  );
 
   const inference = {
     wafer:    { confidence: 1.0, method: 'provided' },

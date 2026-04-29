@@ -131,7 +131,8 @@ export function toCanvas(
   // ── Viewport transform ─────────────────────────────────────────────────────
   const colorbarReserve = drawColorbar ? colorbarWidth + 28 : drawBinLegend ? BIN_LEGEND_W : 0;
   const axisReserve     = showAxes ? 32 : 0;
-  const drawW = cssW - 2 * padding - colorbarReserve;
+  const axisLeftReserve = showAxes ? 36 : 0;
+  const drawW = cssW - 2 * padding - colorbarReserve - axisLeftReserve;
   const drawH = cssH - 2 * padding - axisReserve;
 
   let originX: number, originY: number, ppm: number;
@@ -140,7 +141,7 @@ export function toCanvas(
     ({ originX, originY, ppm } = _viewport);
   } else {
     ppm     = Math.min(drawW / dataW, drawH / dataH);
-    originX = padding + (drawW - dataW * ppm) / 2 - minX * ppm;
+    originX = padding + axisLeftReserve + (drawW - dataW * ppm) / 2 - minX * ppm;
     originY = padding + (drawH - dataH * ppm) / 2 + maxY * ppm;
   }
 
@@ -190,7 +191,7 @@ export function toCanvas(
 
   // ── Draw axis ticks ────────────────────────────────────────────────────────
   if (showAxes) {
-    drawAxisTicks(ctx, cssW, cssH, originX, originY, ppm, padding, axisReserve, diePitchMm);
+    drawAxisTicks(ctx, cssW, cssH, originX, originY, ppm, padding, axisReserve, axisLeftReserve, diePitchMm);
   }
 
   // ── Draw colorbar ──────────────────────────────────────────────────────────
@@ -416,6 +417,7 @@ function drawAxisTicks(
   ppm: number,
   padding: number,
   axisReserve: number,
+  axisLeftReserve: number,
   diePitchMm?: { x: number; y: number },
 ): void {
   ctx.save();
@@ -425,7 +427,7 @@ function drawAxisTicks(
   ctx.lineWidth   = 0.5;
 
   const axisY = cssH - axisReserve + 4;
-  const axisX = padding - 4;
+  const axisX = padding + axisLeftReserve - 4;
 
   // Target ~one tick per 50px.
   const xTickStepMm = niceStep(50 / ppm);

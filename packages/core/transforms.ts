@@ -125,6 +125,9 @@ export function transformDies(
  * Attach data values to dies.
  * matchBy='xy'  — matches by wafer coordinates (v0.1 behaviour)
  * matchBy='ij'  — matches by grid indices
+ *
+ * Note: duplicate rows with the same coordinate produce last-wins behaviour.
+ * Deduplicate `data` upstream if needed.
  */
 export function mapDataToDies(dies: Die[], data: DataRow[], options: MapOptions): Die[] {
   const { valueField, matchBy = 'xy' } = options;
