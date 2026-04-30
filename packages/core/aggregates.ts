@@ -3,11 +3,11 @@ import type { Die } from './dies.js';
 export type AggregationMethod = 'mean' | 'median' | 'stddev' | 'min' | 'max' | 'count';
 
 /**
- * Aggregate a per-channel numeric value across a lot of wafers.
+ * Aggregate a per-test-parameter numeric value across a lot of wafers.
  *
  * @param diesByWafer  One `Die[]` per wafer — all wafers must share the same grid layout.
  * @param method       Aggregation function applied per (i,j) position across all wafers.
- * @param binChannel   Which index in `die.values[]` to aggregate (default 0).
+ * @param paramIndex   Which index in `die.values[]` to aggregate (default 0).
  * @returns One Die per unique (i,j) position with `values[0]` set to the aggregate result.
  *
  * @example Compute mean test value across a lot:
@@ -19,7 +19,7 @@ export type AggregationMethod = 'mean' | 'median' | 'stddev' | 'min' | 'max' | '
 export function aggregateValues(
   diesByWafer: Die[][],
   method: AggregationMethod,
-  binChannel = 0,
+  paramIndex = 0,
 ): Die[] {
   if (!diesByWafer.length) return [];
 
@@ -29,7 +29,7 @@ export function aggregateValues(
   for (const waferDies of diesByWafer) {
     for (const die of waferDies) {
       const key = `${die.i},${die.j}`;
-      const v = die.values?.[binChannel];
+      const v = die.values?.[paramIndex];
       if (v !== undefined) {
         if (!valuesMap.has(key)) {
           valuesMap.set(key, []);
@@ -76,12 +76,12 @@ export function aggregateValues(
 
 /**
  * Return all unique bin values present in dies, sorted ascending.
- * binChannel selects which position in die.bins[] to inspect (default 0 = hard bin).
+ * `binIndex` selects which position in `die.bins[]` to inspect (default 0 = hard bin).
  */
-export function getUniqueBins(dies: Die[], binChannel = 0): number[] {
+export function getUniqueBins(dies: Die[], binIndex = 0): number[] {
   const seen = new Set<number>();
   for (const die of dies) {
-    const b = die.bins?.[binChannel];
+    const b = die.bins?.[binIndex];
     if (b !== undefined) seen.add(b);
   }
   return [...seen].sort((a, b) => a - b);
@@ -101,19 +101,19 @@ export function getUniqueBins(dies: Die[], binChannel = 0): number[] {
  *
  * @param diesByWafer  One Die[] per wafer, all sharing the same grid layout.
  * @param targetBin    The bin value to count.
- * @param binChannel   Which position in die.bins[] to test (default 0 = hard bin).
+ * @param binIndex     Which position in `die.bins[]` to test (default 0 = hard bin).
  */
 export function aggregateBinCounts(
   diesByWafer: Die[][],
   targetBin: number,
-  binChannel = 0,
+  binIndex = 0,
 ): Die[] {
   if (!diesByWafer.length) return [];
 
   const countMap = new Map<string, number>();
   for (const waferDies of diesByWafer) {
     for (const die of waferDies) {
-      if (die.bins?.[binChannel] === targetBin) {
+      if (die.bins?.[binIndex] === targetBin) {
         const key = `${die.i},${die.j}`;
         countMap.set(key, (countMap.get(key) ?? 0) + 1);
       }

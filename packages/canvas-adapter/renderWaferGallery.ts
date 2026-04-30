@@ -41,6 +41,8 @@ export interface GalleryController {
   setOptions(opts: Partial<WaferSceneOptions>): void;
   /** Return the current shared scene options. */
   getOptions(): WaferSceneOptions;
+  /** Update the fallback format for unitless values across all cards. */
+  setFallbackFormat(format: 'si' | 'engineering'): void;
   /** Remove all DOM and event listeners. */
   destroy(): void;
 }
@@ -94,6 +96,7 @@ export function renderWaferGallery(
 ): GalleryController {
   const cardPadding      = options.cardPadding      ?? 6;
   const downloadFilename = options.downloadFilename ?? 'wafer-gallery';
+  let currentFallbackFormat = options.fallbackFormat;
 
   let sharedOpts: WaferSceneOptions = {
     plotMode:               'hardbin',
@@ -176,6 +179,42 @@ export function renderWaferGallery(
       flexShrink: '0',
     });
     return sep;
+  }
+
+  function makeSelect<T extends string | number>(
+    title: string,
+    items: Array<{ value: T; label: string }>,
+    getCurrent: () => T,
+    onPick: (v: T) => void,
+  ): HTMLSelectElement {
+    const sel = document.createElement('select');
+    sel.title = title;
+    Object.assign(sel.style, {
+      fontSize:     '11px',
+      height:       '24px',
+      padding:      '0 4px',
+      border:       `1px solid rgba(0,0,0,0.18)`,
+      borderRadius: '3px',
+      background:   '#fafafa',
+      color:        CLR.icon,
+      cursor:       'pointer',
+      flexShrink:   '0',
+      maxWidth:     '130px',
+    });
+    function rebuild(newItems: Array<{ value: T; label: string }>, current: T): void {
+      sel.innerHTML = '';
+      for (const item of newItems) {
+        const opt = document.createElement('option');
+        opt.value       = String(item.value);
+        opt.textContent = item.label;
+        if (item.value === current) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    }
+    rebuild(items, getCurrent());
+    sel.addEventListener('change', () => onPick(sel.value as T));
+    (sel as HTMLSelectElement & { rebuildOptions: (items: Array<{ value: T; label: string }>, current: T) => void }).rebuildOptions = rebuild;
+    return sel;
   }
 
   function makeDropdown<T extends string>(
@@ -268,6 +307,65 @@ export function renderWaferGallery(
     v => applyShared({ colorScheme: v }),
   );
 
+  // ── Channel selects — test channel (value/stackedValues) and bin channel (hardbin/softbin/stackedBins) ──
+
+  function buildTestChannelItems(): Array<{ value: number; label: string }> {
+    const defs = sharedOpts.testDefs;
+    if (defs && defs.length > 0) return defs.map(d => ({ value: d.index, label: d.name }));
+    // Fallback: infer channel count from first item's dies.
+    const maxCh = currentItems.reduce((m, it) =>
+      Math.max(m, ...it.dies.map(d => d.values?.length ?? 0)), 0);
+    return Array.from({ length: maxCh }, (_, i) => ({ value: i, label: `Values[${i}]` }));
+  }
+
+  function buildBinChannelItems(): Array<{ value: number; label: string }> {
+    const hDefs = sharedOpts.hbinDefs;
+    const sDefs = sharedOpts.sbinDefs;
+    if (hDefs || sDefs) {
+      const items: Array<{ value: number; label: string }> = [];
+      if (hDefs) items.push({ value: 0, label: 'Hard bin' });
+      if (sDefs) items.push({ value: 1, label: 'Soft bin' });
+      return items.length ? items : [{ value: 0, label: 'Bins[0]' }];
+    }
+    const maxCh = currentItems.reduce((m, it) =>
+      Math.max(m, ...it.dies.map(d => d.bins?.length ?? 0)), 0);
+    return Array.from({ length: Math.max(1, maxCh) }, (_, i) => ({ value: i, label: `Bins[${i}]` }));
+  }
+
+  const VALUE_MODES  = new Set<PlotMode>(['value', 'stackedValues']);
+  const BIN_CH_MODES = new Set<PlotMode>(['hardbin', 'softbin', 'stackedBins']);
+
+  let rebuildTestSel: ((items: Array<{ value: number; label: string }>, cur: number) => void) | null = null;
+  let rebuildBinChSel: ((items: Array<{ value: number; label: string }>, cur: number) => void) | null = null;
+
+  const sepTestCh  = makeSep();
+  const selTestCh  = makeSelect<number>(
+    'Test',
+    buildTestChannelItems(),
+    () => sharedOpts.testIndex ?? 0,
+    v => applyShared({ testIndex: Number(v) }),
+  );
+  rebuildTestSel = (selTestCh as any).rebuildOptions as typeof rebuildTestSel;
+
+  const selBinCh   = makeSelect<number>(
+    'Bin type',
+    buildBinChannelItems(),
+    () => sharedOpts.binIndex ?? 0,
+    v => applyShared({ binIndex: Number(v) }),
+  );
+  rebuildBinChSel = (selBinCh as any).rebuildOptions as typeof rebuildBinChSel;
+
+  function syncChannelSelects(): void {
+    const mode = sharedOpts.plotMode ?? 'hardbin';
+    const showTest  = VALUE_MODES.has(mode);
+    const showBinCh = BIN_CH_MODES.has(mode);
+    sepTestCh.style.display = showTest || showBinCh ? '' : 'none';
+    selTestCh.style.display  = showTest   ? '' : 'none';
+    selBinCh.style.display   = showBinCh  ? '' : 'none';
+    if (showTest)  rebuildTestSel!(buildTestChannelItems(), sharedOpts.testIndex ?? 0);
+    if (showBinCh) rebuildBinChSel!(buildBinChannelItems(), sharedOpts.binIndex ?? 0);
+  }
+
   const btnRings = makeBtn('rings', 'Toggle ring boundaries', () => {
     applyShared({ showRingBoundaries: !sharedOpts.showRingBoundaries });
     setActive(btnRings, !!sharedOpts.showRingBoundaries);
@@ -302,6 +400,9 @@ export function renderWaferGallery(
 
   barEl.appendChild(btnMode);
   barEl.appendChild(btnPalette);
+  barEl.appendChild(sepTestCh);
+  barEl.appendChild(selTestCh);
+  barEl.appendChild(selBinCh);
   barEl.appendChild(makeSep());
   barEl.appendChild(btnRings);
   barEl.appendChild(btnQuadrants);
@@ -319,6 +420,7 @@ export function renderWaferGallery(
   setActive(btnLabels,    !!sharedOpts.showText);
   setActive(btnFlipH,     !!sharedOpts.flipX);
   setActive(btnFlipV,     !!sharedOpts.flipY);
+  syncChannelSelects();
 
   // ── Bin legend strip ───────────────────────────────────────────────────────
 
@@ -448,6 +550,7 @@ export function renderWaferGallery(
   function applyShared(partial: Partial<WaferSceneOptions>): void {
     sharedOpts = { ...sharedOpts, ...partial };
     for (const ctrl of cardControllers) ctrl.setOptions(partial);
+    syncChannelSelects();
     rebuildLegend();
     options.onSceneOptionsChange?.(sharedOpts);
   }
@@ -507,7 +610,7 @@ export function renderWaferGallery(
         toolbarControls: 'view-only',
         showTooltip:     true,
         padding:         cardPadding,
-        fallbackFormat:  options.fallbackFormat,
+        fallbackFormat:  currentFallbackFormat,
         onClick:         item.onClick,
         onSelect:        item.onSelect,
       });
@@ -680,6 +783,11 @@ export function renderWaferGallery(
 
     getOptions(): WaferSceneOptions {
       return { ...sharedOpts };
+    },
+
+    setFallbackFormat(format: 'si' | 'engineering'): void {
+      currentFallbackFormat = format;
+      for (const ctrl of cardControllers) ctrl.setFallbackFormat(format);
     },
 
     destroy(): void {

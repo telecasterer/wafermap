@@ -24,7 +24,7 @@ function engFormat(v: number): string {
 }
 
 /**
- * Format a numeric value for display (colorbar ticks, tooltips, overlays).
+ * Format a numeric value for display (tooltips, overlays, single-value labels).
  *
  * - With a unit: always uses SI prefix (e.g. `12 µV`).
  * - Without a unit, `fallbackFormat: 'si'`: SI prefix with no unit suffix (e.g. `12 µ`).
@@ -41,4 +41,98 @@ export function fmt(v: number, unit?: string, fallbackFormat?: 'si' | 'engineeri
     return abs >= 1000 ? v.toFixed(0) : abs >= 100 ? v.toFixed(1) : abs >= 10 ? v.toFixed(2) : v.toFixed(3);
   }
   return engFormat(v);
+}
+
+/**
+ * Format a range of values for a colorbar axis.
+ *
+ * Returns `{ tickFmt, axisLabel }` where:
+ * - `tickFmt(v)` formats a single tick value as a compact number (no unit suffix).
+ * - `axisLabel` is the quantity label for the axis, combining name and scaled unit
+ *   so it only appears once (e.g. `"Idsat (mA)"`, `"Ioff (nA)"`, `"Vth (V)"`).
+ *
+ * A shared SI scale is chosen from the representative value (typically `vMax`).
+ * All ticks are divided by the same scale factor so the axis is consistent.
+ *
+ * Without a unit the ticks use `fmt()` directly and `axisLabel` is just the name.
+ */
+export function fmtColorbarAxis(
+  vRef: number,
+  name: string | null | undefined,
+  unit: string | undefined,
+  fallbackFormat: 'si' | 'engineering' = 'engineering',
+): { tickFmt: (v: number) => string; axisLabel: string } {
+  const abs = Math.abs(vRef);
+
+  if (unit) {
+    // With unit: pick SI prefix from vRef, ticks are bare scaled numbers, label carries prefix+unit.
+    const [scale, prefix] = abs === 0
+      ? ([1, ''] as [number, string])
+      : (SI_PREFIXES.find(([s]) => abs >= s * 0.9999) ?? [1e-15, 'f']);
+
+    const tickFmt = (v: number): string => {
+      if (!isFinite(v)) return String(v);
+      if (v === 0) return '0';
+      const scaled = v / scale;
+      const a = Math.abs(scaled);
+      const digits = a >= 100 ? 0 : a >= 10 ? 1 : 2;
+      return scaled.toFixed(digits);
+    };
+
+    const scaledUnit = `${prefix}${unit}`;
+    const axisLabel  = name ? `${name} (${scaledUnit})` : scaledUnit;
+    return { tickFmt, axisLabel };
+  }
+
+  // No unit. Values in the normal display range [0.1, 9999] need no scaling —
+  // ticks show as plain numbers and the label is just the name.
+  if (abs === 0 || (abs >= 0.1 && abs < 1e4)) {
+    return {
+      tickFmt:   v => fmt(v, undefined, fallbackFormat),
+      axisLabel: name ?? '',
+    };
+  }
+
+  if (fallbackFormat === 'si') {
+    // SI prefix mode: same as with-unit path but suffix is empty.
+    const [scale, prefix] = SI_PREFIXES.find(([s]) => abs >= s * 0.9999) ?? [1e-15, 'f'];
+    const tickFmt = (v: number): string => {
+      if (!isFinite(v)) return String(v);
+      if (v === 0) return '0';
+      const scaled = v / scale;
+      const a = Math.abs(scaled);
+      const digits = a >= 100 ? 0 : a >= 10 ? 1 : 2;
+      return scaled.toFixed(digits);
+    };
+    const axisLabel = name ? `${name} (${prefix})` : `(${prefix})`;
+    return { tickFmt, axisLabel };
+  }
+
+  // Engineering mode: pick the shared E±N exponent from vRef, ticks are bare scaled numbers,
+  // label carries the exponent so "8.00" with "Cgg ×10⁻¹⁵" is unambiguous.
+  const exp3    = Math.floor(Math.log10(abs) / 3) * 3;
+  const clamped = Math.max(-15, Math.min(12, exp3));
+  const scale   = Math.pow(10, clamped);
+
+  const tickFmt = (v: number): string => {
+    if (!isFinite(v)) return String(v);
+    if (v === 0) return '0';
+    const scaled = v / scale;
+    const a = Math.abs(scaled);
+    const digits = a >= 100 ? 0 : a >= 10 ? 1 : 2;
+    return scaled.toFixed(digits);
+  };
+
+  const expLabel  = clamped === 0 ? '' : `×10${superscript(clamped)}`;
+  const axisLabel = name
+    ? (expLabel ? `${name} (${expLabel})` : name)
+    : expLabel;
+  return { tickFmt, axisLabel };
+}
+
+function superscript(n: number): string {
+  return String(n).split('').map(c => (
+    { '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+      '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' }[c] ?? c
+  )).join('');
 }

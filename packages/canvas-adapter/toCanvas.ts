@@ -1,7 +1,7 @@
 import type { Scene } from '../renderer/buildScene.js';
 import type { Die } from '../core/dies.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
-import { fmt } from '../renderer/fmt.js';
+import { fmt, fmtColorbarAxis } from '../renderer/fmt.js';
 import { svgPathToCanvas } from './svgPathToCanvas.js';
 
 export interface ToCanvasOptions {
@@ -260,7 +260,9 @@ export function toCanvas(
     }
 
     const testDef = scene.testDefs?.find(t => t.index === scene.testIndex);
-    const tickUnit = testDef?.unit;
+    const { tickFmt, axisLabel } = fmtColorbarAxis(
+      vMax, testDef?.name, testDef?.unit, fallbackFormat,
+    );
 
     // Draw intermediate ticks with middle baseline.
     ctx.textBaseline = 'middle';
@@ -270,7 +272,7 @@ export function toCanvas(
       ctx.moveTo(cbX + colorbarWidth, sy);
       ctx.lineTo(cbX + colorbarWidth + tickLen, sy);
       ctx.stroke();
-      ctx.fillText(fmt(v, tickUnit, fallbackFormat), cbX + colorbarWidth + tickLen + 2, sy);
+      ctx.fillText(tickFmt(v), cbX + colorbarWidth + tickLen + 2, sy);
     }
 
     // Always draw exact min/max at the bar edges.
@@ -279,27 +281,24 @@ export function toCanvas(
     ctx.lineTo(cbX + colorbarWidth + tickLen, cbY);
     ctx.stroke();
     ctx.textBaseline = 'top';
-    ctx.fillText(fmt(vMax, tickUnit, fallbackFormat), cbX + colorbarWidth + tickLen + 2, cbY);
+    ctx.fillText(tickFmt(vMax), cbX + colorbarWidth + tickLen + 2, cbY);
 
     ctx.beginPath();
     ctx.moveTo(cbX + colorbarWidth, cbY + cbH);
     ctx.lineTo(cbX + colorbarWidth + tickLen, cbY + cbH);
     ctx.stroke();
     ctx.textBaseline = 'bottom';
-    ctx.fillText(fmt(vMin, tickUnit, fallbackFormat), cbX + colorbarWidth + tickLen + 2, cbY + cbH);
+    ctx.fillText(tickFmt(vMin), cbX + colorbarWidth + tickLen + 2, cbY + cbH);
 
-    // Test-name label above the bar (rotated 90°). When unit is shown inline
-    // with tick values via fmt(), just show the name here to avoid repetition.
-    const cbLabel = testDef?.name ?? null;
+    // Axis label above the bar, right-aligned to the tick column — e.g. "Idsat (mA)".
+    const cbLabel = axisLabel || null;
     if (cbLabel) {
       ctx.save();
-      ctx.fillStyle   = '#555';
-      ctx.font        = COLORBAR_LABEL_FONT;
-      ctx.textAlign   = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.translate(cbX - 4, cbY + cbH / 2);
-      ctx.rotate(-Math.PI / 2);
-      ctx.fillText(cbLabel, 0, 0);
+      ctx.fillStyle    = '#555';
+      ctx.font         = COLORBAR_LABEL_FONT;
+      ctx.textAlign    = 'right';
+      ctx.textBaseline = 'top';
+      ctx.fillText(cbLabel, cssW - padding, padding);
       ctx.restore();
     }
   }
@@ -495,4 +494,4 @@ function niceStep(rawMm: number): number {
   return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * magnitude;
 }
 
-export { fmt } from '../renderer/fmt.js';
+export { fmt, fmtColorbarAxis } from '../renderer/fmt.js';

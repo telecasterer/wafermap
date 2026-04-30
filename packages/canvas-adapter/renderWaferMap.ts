@@ -80,6 +80,8 @@ export interface WaferCanvasController {
   clearSelection(): void;
   /** Reset zoom and pan to fitted view. */
   resetView(): void;
+  /** Update the fallback format for unitless values and re-render. */
+  setFallbackFormat(format: 'si' | 'engineering'): void;
   /** Remove all event listeners and DOM elements. */
   destroy(): void;
 }
@@ -151,6 +153,8 @@ export function renderWaferMap(
     ...drawOptions
   } = options;
 
+  let currentFallbackFormat = drawOptions.fallbackFormat;
+
   // ── Mutable state ──────────────────────────────────────────────────────────
   let currentDies     = dies;
   // Selected die keys ("i,j") — key-based so references survive scene rebuilds.
@@ -200,7 +204,7 @@ export function renderWaferMap(
       testDefs:               so.testDefs,
       hbinDefs:               so.hbinDefs,
       sbinDefs:               so.sbinDefs,
-      fallbackFormat:               drawOptions.fallbackFormat,
+      fallbackFormat:         currentFallbackFormat,
       interactiveTransform: {
         rotation: so.rotation ?? 0,
         flipX:    so.flipX   ?? false,
@@ -618,6 +622,7 @@ export function renderWaferMap(
     const vp = viewport ?? undefined;
     const result = toCanvas(canvas, currentScene, {
       ...drawOptions,
+      fallbackFormat: currentFallbackFormat,
       showAxes:  drawOptions.showAxes ?? (viewport !== null),
       _viewport: vp,
       _activeBin: sceneOpts.highlightBin,
@@ -1028,6 +1033,12 @@ export function renderWaferMap(
     clearSelection(): void {
       selectedKeys = new Set();
       onSelect?.([]);
+      render();
+    },
+
+    setFallbackFormat(format: 'si' | 'engineering'): void {
+      currentFallbackFormat = format;
+      rebuildScene();
       render();
     },
 

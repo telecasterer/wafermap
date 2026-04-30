@@ -1,150 +1,324 @@
-import { buildWaferMap } from 'wafermap';
+import { buildWaferMap, aggregateValues, aggregateBinCounts, getUniqueBins } from 'wafermap';
 import { renderWaferGallery } from 'wafermap/canvas-adapter';
 
 const PITCH = 10;
 const WAFER_IDS = ['W01', 'W02', 'W03', 'W04'];
 
-const TEST_DEFS = [
+const TEST_DEFS_WITH_UNITS = [
   { index: 0, name: 'Idsat', unit: 'A' },
   { index: 1, name: 'Vth',   unit: 'V' },
   { index: 2, name: 'Ioff',  unit: 'A' },
+  { index: 3, name: 'Cgg',   unit: 'F' },
+];
+const TEST_DEFS_NO_UNITS = [
+  { index: 0, name: 'Idsat' },
+  { index: 1, name: 'Vth'   },
+  { index: 2, name: 'Ioff'  },
+  { index: 3, name: 'Cgg'   },
 ];
 
-// Hard bin definitions (bins[0]) — physical sort result, range 0–32767
 const HBIN_DEFS = [
   { bin: 1, name: 'Pass' },
   { bin: 2, name: 'Leakage' },
   { bin: 3, name: 'Vth Shift' },
-  { bin: 5, name: 'Contact Open' },
-  { bin: 7, name: 'Parametric Low' },
 ];
-
-// Soft bin definitions (bins[1]) — logical test-program classification, range 0–32767
-// Each hard bin maps to 3–8 soft bin subtypes. Number spaces are independent.
 const SBIN_DEFS = [
-  // Pass subtypes: 10–17
   { bin: 10, name: 'Pass - Nominal' },
   { bin: 11, name: 'Pass - Hi Idsat' },
   { bin: 12, name: 'Pass - Lo Idsat' },
-  { bin: 13, name: 'Pass - Hi Vth' },
-  { bin: 14, name: 'Pass - Lo Vth' },
-  { bin: 15, name: 'Pass - Hi Ioff' },
-  { bin: 16, name: 'Pass - Lo Ioff' },
-  { bin: 17, name: 'Pass - Marginal' },
-  // Leakage subtypes: 20–26
   { bin: 20, name: 'Leakage - Gate' },
   { bin: 21, name: 'Leakage - Junction' },
   { bin: 22, name: 'Leakage - Bulk' },
   { bin: 23, name: 'Leakage - STI' },
-  { bin: 24, name: 'Leakage - Hi Temp' },
   { bin: 25, name: 'Leakage - Corner' },
   { bin: 26, name: 'Leakage - Edge' },
-  // Vth Shift subtypes: 40–46
   { bin: 40, name: 'Vth - Hi NMOS' },
   { bin: 41, name: 'Vth - Lo NMOS' },
   { bin: 42, name: 'Vth - Hi PMOS' },
-  { bin: 43, name: 'Vth - Lo PMOS' },
-  { bin: 44, name: 'Vth - Stress' },
-  { bin: 45, name: 'Vth - Body Effect' },
-  { bin: 46, name: 'Vth - Mismatch' },
-  // Contact Open subtypes: 100–105
-  { bin: 100, name: 'Contact - Poly' },
-  { bin: 101, name: 'Contact - M1' },
-  { bin: 102, name: 'Contact - M2' },
-  { bin: 103, name: 'Contact - Via' },
-  { bin: 104, name: 'Contact - Silicide' },
-  { bin: 105, name: 'Contact - Open' },
-  // Parametric Low subtypes: 200–207
-  { bin: 200, name: 'Param - Idsat Low' },
-  { bin: 201, name: 'Param - Ioff High' },
-  { bin: 202, name: 'Param - Vth Drift' },
-  { bin: 203, name: 'Param - Ron High' },
-  { bin: 204, name: 'Param - Cgg High' },
-  { bin: 205, name: 'Param - Noise' },
-  { bin: 206, name: 'Param - Linearity' },
-  { bin: 207, name: 'Param - Gain Low' },
 ];
 
-// Simulate recontact retests on W01: duplicate a handful of failing die positions
-// to demonstrate die.retestCount and the "Retests: N" tooltip.
-function addSyntheticRetests(results) {
-  const failing = results.filter(r => r.bins[0] !== 1).slice(0, 8);
-  // Each retest entry updates the bin to Pass (bin 1), as would happen after recontact.
-  const retests = failing.map(r => ({
-    ...r,
-    bins:   [1, 10],
-    values: r.values.map(v => v * 1.02),
-  }));
-  return [...results, ...retests];
+// ── State ──────────────────────────────────────────────────────────────────
+let showUnits       = true;
+let fallbackFormat  = 'engineering';
+let aggregated      = false;    // true = show aggregated lot map instead of individual wafers
+let aggrMethod      = 'mean';   // for aggregateValues
+let aggrParam       = 0;        // which values[] index to aggregate (test parameter)
+let aggrTargetBin   = 1;        // for aggregateBinCounts (bin value, e.g. 1 = Pass)
+let aggrBinType     = 0;        // which bins[] index for aggregateBinCounts (0=hard, 1=soft)
+
+let gallery         = null;
+let waferItems      = [];       // individual wafer items (from buildWaferMap)
+let waferDiesByWafer = [];      // Die[][] for aggregation functions
+
+function currentTestDefs() {
+  return showUnits ? TEST_DEFS_WITH_UNITS : TEST_DEFS_NO_UNITS;
 }
 
+// Build the gallery items from current state (individual or aggregated).
+function buildGalleryItems(plotMode) {
+  if (!aggregated) return waferItems;
+
+  const isBinMode = plotMode === 'hardbin' || plotMode === 'softbin' || plotMode === 'stackedBins';
+
+  if (isBinMode) {
+    // Aggregate bin counts: count how many wafers had aggrTargetBin at each position
+    const dies = aggregateBinCounts(waferDiesByWafer, aggrTargetBin, aggrBinType);
+    const binDef = (aggrBinType === 0 ? HBIN_DEFS : SBIN_DEFS)
+      .find(d => d.bin === aggrTargetBin);
+    const binName = binDef?.name ?? `Bin ${aggrTargetBin}`;
+    return [{ wafer: waferItems[0].wafer, dies, label: `Lot — ${binName} count (${WAFER_IDS.length} wafers)` }];
+  } else {
+    // Aggregate values: apply method across all wafers for the chosen test parameter
+    const dies = aggregateValues(waferDiesByWafer, aggrMethod, aggrParam);
+    const chDef = currentTestDefs().find(d => d.index === aggrParam);
+    const chName = chDef?.name ?? `Param ${aggrParam}`;
+    return [{ wafer: waferItems[0].wafer, dies, label: `Lot — ${chName} ${aggrMethod}` }];
+  }
+}
+
+function currentPlotMode() {
+  return gallery?.getOptions()?.plotMode ?? 'value';
+}
+
+function refreshGallery() {
+  if (!gallery) return;
+  const mode = currentPlotMode();
+  gallery.setItems(buildGalleryItems(mode));
+  gallery.setOptions({ testDefs: currentTestDefs(), hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS });
+  gallery.setFallbackFormat(fallbackFormat);
+  syncControlVis();
+}
+
+// ── Controls ───────────────────────────────────────────────────────────────
+
+let elAggrControls = null;   // aggregation sub-controls row (shown when aggregated)
+let elAggrMethod   = null;
+let elAggrParam    = null;
+let elAggrBin      = null;
+let elAggrBinType  = null;
+
+function syncControlVis() {
+  if (!elAggrControls) return;
+  elAggrControls.style.display = aggregated ? '' : 'none';
+
+  const mode = currentPlotMode();
+  const isBinMode = mode === 'hardbin' || mode === 'softbin' || mode === 'stackedBins';
+  elAggrMethod.closest('label').style.display = aggregated && !isBinMode ? '' : 'none';
+  elAggrParam.closest('label').style.display  = aggregated && !isBinMode ? '' : 'none';
+  elAggrBin.closest('label').style.display    = aggregated && isBinMode  ? '' : 'none';
+  elAggrBinType.closest('label').style.display = aggregated && isBinMode ? '' : 'none';
+}
+
+function buildControls() {
+  const bar = document.getElementById('controls');
+
+  // ── Row 1: format controls ────────────────────────────────────────────────
+  const row1 = document.createElement('div');
+  row1.style.cssText = 'display:flex;flex-wrap:wrap;gap:12px;align-items:center;width:100%;';
+
+  // fallbackFormat select
+  const fmtLabel = document.createElement('label');
+  fmtLabel.textContent = 'Unitless format: ';
+  const fmtSel = document.createElement('select');
+  [['engineering', 'Engineering (12E-6)'], ['si', 'SI prefix (12 µ)']].forEach(([v, t]) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = t;
+    if (v === fallbackFormat) o.selected = true;
+    fmtSel.appendChild(o);
+  });
+  fmtSel.addEventListener('change', () => { fallbackFormat = fmtSel.value; refreshGallery(); });
+  fmtLabel.appendChild(fmtSel);
+
+  // units select
+  const unitLabel = document.createElement('label');
+  unitLabel.textContent = 'Test units: ';
+  const unitSel = document.createElement('select');
+  [['units', 'With units (A / V / F)'], ['no-units', 'Without units']].forEach(([v, t]) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = t;
+    if ((v === 'units') === showUnits) o.selected = true;
+    unitSel.appendChild(o);
+  });
+  unitSel.addEventListener('change', () => { showUnits = unitSel.value === 'units'; refreshGallery(); });
+  unitLabel.appendChild(unitSel);
+
+  row1.appendChild(fmtLabel);
+  row1.appendChild(unitLabel);
+
+  // ── Row 2: aggregation controls ───────────────────────────────────────────
+  const row2 = document.createElement('div');
+  row2.style.cssText = 'display:flex;flex-wrap:wrap;gap:12px;align-items:center;width:100%;border-top:1px solid #e0e0e0;padding-top:8px;margin-top:4px;';
+
+  // Aggregation toggle
+  const aggrToggleLabel = document.createElement('label');
+  aggrToggleLabel.textContent = 'View: ';
+  const aggrToggle = document.createElement('select');
+  [['individual', 'Individual wafers'], ['aggregated', 'Aggregated lot']].forEach(([v, t]) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = t;
+    if ((v === 'aggregated') === aggregated) o.selected = true;
+    aggrToggle.appendChild(o);
+  });
+  aggrToggle.addEventListener('change', () => {
+    aggregated = aggrToggle.value === 'aggregated';
+    refreshGallery();
+  });
+  aggrToggleLabel.appendChild(aggrToggle);
+  row2.appendChild(aggrToggleLabel);
+
+  // Aggregation sub-controls (hidden when individual)
+  elAggrControls = document.createElement('div');
+  elAggrControls.style.cssText = 'display:none;display:flex;flex-wrap:wrap;gap:12px;align-items:center;';
+
+  // Method (for value/stackedValues)
+  const methodLabel = document.createElement('label');
+  methodLabel.textContent = 'Method: ';
+  elAggrMethod = document.createElement('select');
+  [['mean','Mean'],['median','Median'],['stddev','Std dev'],['min','Min'],['max','Max']].forEach(([v,t]) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = t;
+    if (v === aggrMethod) o.selected = true;
+    elAggrMethod.appendChild(o);
+  });
+  elAggrMethod.addEventListener('change', () => { aggrMethod = elAggrMethod.value; refreshGallery(); });
+  methodLabel.appendChild(elAggrMethod);
+
+  // Test parameter selector (for value/stackedValues aggregation)
+  const paramLabel = document.createElement('label');
+  paramLabel.textContent = 'Parameter: ';
+  elAggrParam = document.createElement('select');
+  TEST_DEFS_WITH_UNITS.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.index; o.textContent = d.name;
+    if (d.index === aggrParam) o.selected = true;
+    elAggrParam.appendChild(o);
+  });
+  elAggrParam.addEventListener('change', () => { aggrParam = Number(elAggrParam.value); refreshGallery(); });
+  paramLabel.appendChild(elAggrParam);
+
+  // Target bin (for bin aggregation)
+  const binLabel = document.createElement('label');
+  binLabel.textContent = 'Target bin: ';
+  elAggrBin = document.createElement('select');
+  [...HBIN_DEFS, ...SBIN_DEFS].forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.bin; o.textContent = d.name;
+    if (d.bin === aggrTargetBin) o.selected = true;
+    elAggrBin.appendChild(o);
+  });
+  elAggrBin.addEventListener('change', () => { aggrTargetBin = Number(elAggrBin.value); refreshGallery(); });
+  binLabel.appendChild(elAggrBin);
+
+  // Bin type selector (hard vs soft) for bin count aggregation
+  const binTypeLabel = document.createElement('label');
+  binTypeLabel.textContent = 'Bin type: ';
+  elAggrBinType = document.createElement('select');
+  [['0','Hard bin'],['1','Soft bin']].forEach(([v,t]) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = t;
+    if (Number(v) === aggrBinType) o.selected = true;
+    elAggrBinType.appendChild(o);
+  });
+  elAggrBinType.addEventListener('change', () => {
+    aggrBinType = Number(elAggrBinType.value);
+    // Rebuild the target bin dropdown to match the selected bin type
+    const defs = aggrBinType === 0 ? HBIN_DEFS : SBIN_DEFS;
+    elAggrBin.innerHTML = '';
+    defs.forEach(d => {
+      const o = document.createElement('option');
+      o.value = d.bin; o.textContent = d.name;
+      elAggrBin.appendChild(o);
+    });
+    aggrTargetBin = defs[0]?.bin ?? 1;
+    elAggrBin.value = aggrTargetBin;
+    refreshGallery();
+  });
+  binTypeLabel.appendChild(elAggrBinType);
+
+  elAggrControls.appendChild(methodLabel);
+  elAggrControls.appendChild(paramLabel);
+  elAggrControls.appendChild(binLabel);
+  elAggrControls.appendChild(binTypeLabel);
+
+  row2.appendChild(aggrToggleLabel);
+  row2.appendChild(elAggrControls);
+
+  bar.appendChild(row1);
+  bar.appendChild(row2);
+
+  // Wire the gallery's mode changes so aggregation sub-controls
+  // show/hide correctly when the user changes mode in the toolbar.
+  // We poll via onSceneOptionsChange (passed as gallery option below).
+}
+
+// ── Main ───────────────────────────────────────────────────────────────────
 async function main() {
-  const rows = await loadCsv('../../data/dummy-fulldata.csv');
-  const items = [];
+  const rows = await loadCsv('../../data/fmt-demo.csv');
+  waferItems = [];
+  waferDiesByWafer = [];
 
   for (const waferId of WAFER_IDS) {
-    const waferRows = rows.filter((row) => row.wafer === waferId);
-    const firstRow = waferRows[0] ?? {};
+    const waferRows = rows.filter(row => row.wafer === waferId);
+    const firstRow  = waferRows[0] ?? {};
 
-    let results = waferRows.map((row) => ({
-      x: Number(row.x),
-      y: Number(row.y),
+    const results = waferRows.map(row => ({
+      x:      Number(row.x),
+      y:      Number(row.y),
       bins:   [Number(row.hbin), Number(row.sbin)],
-      values: [Number(row.testA), Number(row.testB), Number(row.testC)],
+      values: [Number(row.Idsat), Number(row.Vth), Number(row.Ioff), Number(row.Cgg)],
     }));
-
-    // W01 demonstrates retestPolicy: add synthetic recontact retests so that
-    // die.retestCount appears on affected dies and shows "Retests: N" in the tooltip.
-    if (waferId === 'W01') results = addSyntheticRetests(results);
 
     const result = buildWaferMap({
       results,
-      // 'last' (default) keeps the most recent result — the retest pass wins over the original fail.
-      // Switch to 'first' to keep the original test result instead.
-      retestPolicy: 'last',
       waferConfig: {
         diameter: 150,
         notch: { type: 'bottom' },
-        metadata: {
-          lot: firstRow.lot ?? 'LOT456',
-          waferNumber: Number(waferId.replace(/\D/g, '')),
-          testDate: firstRow.testdate ?? '—',
-          temperature: Number(firstRow.temp ?? 25),
-        },
+        metadata: { lot: firstRow.lot ?? 'FMTDEMO', waferNumber: Number(waferId.replace(/\D/g, '')) },
       },
       dieConfig: { width: PITCH, height: PITCH },
-      testDefs: TEST_DEFS,
-      hbinDefs: HBIN_DEFS,
-      sbinDefs: SBIN_DEFS,
+      testDefs:  TEST_DEFS_WITH_UNITS,
+      hbinDefs:  HBIN_DEFS,
+      sbinDefs:  SBIN_DEFS,
     });
 
-    items.push({ wafer: result.wafer, dies: result.dies, label: `${firstRow.lot ?? 'LOT456'} · ${waferId}` });
+    waferItems.push({ wafer: result.wafer, dies: result.dies, label: `${firstRow.lot ?? 'FMTDEMO'} · ${waferId}` });
+    waferDiesByWafer.push(result.dies);
   }
 
-  renderWaferGallery(
+  buildControls();
+
+  gallery = renderWaferGallery(
     document.getElementById('gallery'),
-    items,
+    buildGalleryItems('value'),
     {
       sceneOptions: {
-        plotMode: 'hardbin',
-        testDefs: TEST_DEFS,
-        hbinDefs: HBIN_DEFS,
-        sbinDefs: SBIN_DEFS,
+        plotMode:  'value',
+        testIndex: 0,
+        testDefs:  currentTestDefs(),
+        hbinDefs:  HBIN_DEFS,
+        sbinDefs:  SBIN_DEFS,
+      },
+      fallbackFormat,
+      onSceneOptionsChange: (opts) => {
+        if (aggregated) gallery.setItems(buildGalleryItems(opts.plotMode));
+        syncControlVis();
       },
     },
   );
+
+  syncControlVis();
 }
 
 async function loadCsv(path) {
   const text = await (await fetch(path)).text();
   const [headerLine, ...lines] = text.trim().split(/\r?\n/);
   const headers = headerLine.split(',');
-  return lines.filter(Boolean).map((line) => {
+  return lines.filter(Boolean).map(line => {
     const values = line.split(',');
     return Object.fromEntries(headers.map((h, i) => [h, values[i]]));
   });
 }
 
-main().catch((err) => {
+main().catch(err => {
   document.getElementById('gallery').textContent = `Failed to load: ${err.message}`;
 });
