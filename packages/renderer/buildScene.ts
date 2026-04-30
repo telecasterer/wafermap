@@ -6,7 +6,7 @@ import { rotatePoint } from '../core/transforms.js';
 import { contrastTextColor } from './colorMap.js';
 import { getColorScheme } from './colorSchemes.js';
 import type { TestDef, BinDef } from './buildWaferMap.js';
-import { fmt } from './fmt.js';
+import { fmt, fmtColorbarAxis } from './fmt.js';
 
 type BinDefMap = Map<number, BinDef>;
 
@@ -232,8 +232,8 @@ function rectanglePath(center: Point, width: number, height: number, transform: 
   return toPath(corners);
 }
 
-function formatValueLabel(values: number[]): string {
-  return values.map((value) => value.toFixed(values.length > 1 ? 2 : 3)).join(' / ');
+function formatValueLabel(values: number[], tickFmt: (v: number) => string): string {
+  return values.map(tickFmt).join(' / ');
 }
 
 function formatBinLabel(bins: number[]): string {
@@ -310,9 +310,23 @@ function buildHoverText(
 
 export function generateTextOverlay(
   dies: Die[],
-  options: { plotMode: PlotMode; colorFns: ColorFns; normalize: (v: number) => number; testIndex: number; binIndex: number },
+  options: {
+    plotMode: PlotMode;
+    colorFns: ColorFns;
+    normalize: (v: number) => number;
+    testIndex: number;
+    binIndex: number;
+    valueRange: [number, number];
+    testDefs?: TestDef[];
+    fallbackFormat?: 'si' | 'engineering';
+  },
 ): SceneText[] {
-  const { plotMode, colorFns, normalize, testIndex, binIndex } = options;
+  const { plotMode, colorFns, normalize, testIndex, binIndex, valueRange, testDefs, fallbackFormat } = options;
+
+  // Build a tick formatter matched to the colorbar scale so die labels are consistent.
+  const testDef = testDefs?.find(t => t.index === testIndex);
+  const { tickFmt } = fmtColorbarAxis(valueRange[1], testDef?.name, testDef?.unit, fallbackFormat);
+
   return dies.flatMap((die) => {
     let text = '';
     let color = '#111111';
@@ -320,7 +334,7 @@ export function generateTextOverlay(
     if (plotMode === 'value') {
       const v = die.values?.[testIndex];
       if (v === undefined) return [];
-      text = formatValueLabel([v]);
+      text = formatValueLabel([v], tickFmt);
       color = contrastTextColor(colorFns.forValue(normalize(v)));
     } else if (plotMode === 'hardbin' || plotMode === 'softbin') {
       const bin = die.bins?.[binIndex];
@@ -333,7 +347,7 @@ export function generateTextOverlay(
       color = contrastTextColor(colorFns.forBin(die.bins[Math.floor(die.bins.length / 2)]));
     } else {
       if (!die.values?.length) return [];
-      text = formatValueLabel(die.values);
+      text = formatValueLabel(die.values, tickFmt);
       color = contrastTextColor(colorFns.forValue(normalize(die.values[Math.floor(die.values.length / 2)])));
     }
 
@@ -728,7 +742,10 @@ export function buildScene(
     hoverPoints.push({ x: tdie.x, y: tdie.y, text: buildHoverText(tdie, testDefs, hbinDefs, sbinDefs, fallbackFormat) });
   }
 
-  const texts: SceneText[] = showText ? generateTextOverlay(transformedDies, { plotMode, colorFns, normalize, testIndex, binIndex }) : [];
+  const texts: SceneText[] = showText ? generateTextOverlay(transformedDies, {
+    plotMode, colorFns, normalize, testIndex, binIndex,
+    valueRange: [vMin, vMax], testDefs, fallbackFormat,
+  }) : [];
   const overlays = buildBoundaryOverlay(wafer, transform);
 
   if (showRingBoundaries) overlays.push(...buildRingOverlays(wafer, transform, ringCount));
