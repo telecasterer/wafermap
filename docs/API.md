@@ -511,6 +511,7 @@ All `ToCanvasOptions` fields (padding, background, etc.) are accepted, plus:
   toolbarControls?:        'full' | 'view-only'   // 'view-only' shows only zoom/reset/select/download
   minZoom?:                number    // default 0.5
   maxZoom?:                number    // default 20
+  fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
 }
 ```
 
@@ -570,7 +571,7 @@ The box-select toolbar button only appears when `onSelect` is provided.
 > underlying `Die` data.  Selection stability is guaranteed: `die.i` and `die.j`
 > remain unchanged regardless of display orientation.
 
-### Example
+### Example usage
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
@@ -627,6 +628,7 @@ import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
   onSceneOptionsChange?: (opts: WaferSceneOptions) => void
   cardPadding?:          number             // CSS-px padding inside each card canvas (default 6)
   downloadFilename?:     string             // stem for the composite PNG filename (default 'wafer-gallery')
+  fallbackFormat?:       'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
 }
 ```
 
@@ -682,7 +684,7 @@ the highlight. The active entry is indicated with a bold label and a blue swatch
 border. The legend rebuilds automatically whenever the mode, colour scheme, or
 highlight changes.
 
-### Example
+### Example usage
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
@@ -835,12 +837,13 @@ import { toCanvas } from '@paulrobins/wafermap/canvas-adapter';
 
 ```ts
 interface ToCanvasOptions {
-  padding?:       number    // CSS-px padding inside canvas edge (default 16)
-  showColorbar?:  boolean   // draw colorbar / bin legend (default true)
-  colorbarWidth?: number    // CSS-px width of the colorbar strip (default 16)
-  background?:    string    // canvas background colour (default '#f5f5f5')
-  showAxes?:      boolean   // draw axis tick marks and labels (default false)
-  diePitchMm?:    { x: number; y: number }  // convert mm axis labels to die-index labels
+  padding?:         number    // CSS-px padding inside canvas edge (default 16)
+  showColorbar?:    boolean   // draw colorbar / bin legend (default true)
+  colorbarWidth?:   number    // CSS-px width of the colorbar strip (default 16)
+  background?:      string    // canvas background colour (default '#f5f5f5')
+  showAxes?:        boolean   // draw axis tick marks and labels (default false)
+  diePitchMm?:      { x: number; y: number }  // convert mm axis labels to die-index labels
+  fallbackFormat?:  'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
 }
 ```
 
@@ -852,6 +855,7 @@ interface ToCanvasOptions {
 | `hardbin`, `softbin`, `stackedBins` | Bin legend: one swatch + label per unique bin; overflows show `"+ N more"` |
 
 Returns `{ hitTarget, viewport, binLegendRows }`:
+
 - `hitTarget.getDieAtPoint(x, y): Die | null` — hit-test a CSS-pixel position
 - `viewport` — the auto-fitted viewport transform (useful as initial state for custom zoom/pan)
 - `binLegendRows` — `{ bin, y, h }[]` for hit-testing legend row clicks (non-empty for hardbin/softbin/stackedBins)

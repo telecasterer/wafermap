@@ -25,6 +25,13 @@ export interface GalleryOptions {
   cardPadding?:          number;
   /** Filename stem for the composite gallery PNG. Default 'wafer-gallery'. */
   downloadFilename?:     string;
+  /**
+   * Format to use for unitless values outside the normal display range [0.1, 9999].
+   * `'engineering'` (default): multiples-of-3 exponent notation (e.g. `12E-6`).
+   * `'si'`: SI prefix with no unit suffix (e.g. `12 µ`).
+   * Values with a unit always use SI prefix regardless of this setting.
+   */
+  fallbackFormat?:         'si' | 'engineering';
 }
 
 export interface GalleryController {
@@ -232,7 +239,7 @@ export function renderWaferGallery(
 
   const barEl = document.createElement('div');
   Object.assign(barEl.style, {
-    display:       'inline-flex',
+    display:       'flex',
     flexDirection: 'row',
     alignItems:    'center',
     gap:           '0',
@@ -243,6 +250,8 @@ export function renderWaferGallery(
     marginBottom:  '10px',
     boxShadow:     '0 1px 4px rgba(0,0,0,0.10)',
     flexWrap:      'wrap',
+    minWidth:      '0',
+    overflowX:     'auto',
   });
 
   const btnMode = makeDropdown(
@@ -326,6 +335,9 @@ export function renderWaferGallery(
     boxShadow:     '0 1px 4px rgba(0,0,0,0.10)',
     fontSize:      '12px',
     lineHeight:    '1',
+    boxSizing:     'border-box',
+    width:         '100%',
+    minWidth:      '0',
   });
 
   // ── Grid container ─────────────────────────────────────────────────────────
@@ -485,11 +497,17 @@ export function renderWaferGallery(
       });
       card.appendChild(canvas);
 
+      // Append to DOM before renderWaferMap so the canvas has a resolved CSS
+      // layout size when the initial render() fires — avoids a zero-size first
+      // render that the ResizeObserver would otherwise need to correct.
+      gridEl.appendChild(card);
+
       const ctrl = renderWaferMap(canvas, item.wafer, item.dies, {
         sceneOptions:    sharedOpts,
         toolbarControls: 'view-only',
         showTooltip:     true,
         padding:         cardPadding,
+        fallbackFormat:  options.fallbackFormat,
         onClick:         item.onClick,
         onSelect:        item.onSelect,
       });
@@ -500,8 +518,6 @@ export function renderWaferGallery(
         if ((e.target as Element).closest('[data-wmap-toolbar]')) return;
         openModal(item);
       });
-
-      gridEl.appendChild(card);
     }
   }
 
@@ -594,6 +610,7 @@ export function renderWaferGallery(
       sceneOptions:    sharedOpts,
       toolbarControls: 'full',
       showTooltip:     true,
+      fallbackFormat:  options.fallbackFormat,
       onClick:         item.onClick,
       onSelect:        item.onSelect,
     });

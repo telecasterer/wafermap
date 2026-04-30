@@ -1,6 +1,7 @@
 import type { Scene } from '../renderer/buildScene.js';
 import type { Die } from '../core/dies.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
+import { fmt } from '../renderer/fmt.js';
 import { svgPathToCanvas } from './svgPathToCanvas.js';
 
 export interface ToCanvasOptions {
@@ -28,6 +29,13 @@ export interface ToCanvasOptions {
   _viewport?: ViewportTransform;
   /** Currently highlighted bin — drawn with an active indicator in the bin legend. */
   _activeBin?: number;
+  /**
+   * Format to use for unitless values outside the normal display range [0.1, 9999].
+   * `'engineering'` (default): multiples-of-3 exponent notation (e.g. `12E-6`).
+   * `'si'`: SI prefix with no unit suffix (e.g. `12 µ`).
+   * Values with a unit always use SI prefix regardless of this setting.
+   */
+  fallbackFormat?: 'si' | 'engineering';
 }
 
 /** Internal viewport state shared between toCanvas and mountWaferCanvas. */
@@ -86,6 +94,7 @@ export function toCanvas(
     diePitchMm,
     _viewport,
     _activeBin,
+    fallbackFormat,
   } = options;
 
   const drawColorbar   = showColorbar && COLORBAR_MODES.has(scene.plotMode);
@@ -95,6 +104,14 @@ export function toCanvas(
   const dpr     = window.devicePixelRatio ?? 1;
   const cssW    = canvas.clientWidth  || canvas.width;
   const cssH    = canvas.clientHeight || canvas.height;
+
+  // Canvas not yet laid out — bail without touching canvas dimensions so that
+  // the ResizeObserver fires when layout is resolved and triggers a real render.
+  if (cssW <= 0 || cssH <= 0) {
+    const vp: ViewportTransform = { originX: 0, originY: 0, ppm: 1, snapDist: 1 };
+    return { hitTarget: { getDieAtPoint: () => null }, viewport: vp, binLegendRows: [] };
+  }
+
   canvas.width  = Math.round(cssW * dpr);
   canvas.height = Math.round(cssH * dpr);
 
@@ -112,6 +129,10 @@ export function toCanvas(
     return { hitTarget: { getDieAtPoint: () => null }, viewport: vp, binLegendRows: [] };
   }
 
+  const firstRect = scene.rectangles[0];
+  const halfW = firstRect ? firstRect.width  / 2 : 0;
+  const halfH = firstRect ? firstRect.height / 2 : 0;
+
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const p of pts) {
     if (p.x < minX) minX = p.x;
@@ -119,9 +140,6 @@ export function toCanvas(
     if (p.y < minY) minY = p.y;
     if (p.y > maxY) maxY = p.y;
   }
-  const firstRect = scene.rectangles[0];
-  const halfW = firstRect ? firstRect.width  / 2 : 0;
-  const halfH = firstRect ? firstRect.height / 2 : 0;
   minX -= halfW; maxX += halfW;
   minY -= halfH; maxY += halfH;
 
@@ -149,7 +167,7 @@ export function toCanvas(
 
   // ── Draw rectangles ────────────────────────────────────────────────────────
   ctx.save();
-  ctx.setTransform(ppm, 0, 0, -ppm, originX, originY);
+  ctx.setTransform(ppm * dpr, 0, 0, -ppm * dpr, originX * dpr, originY * dpr);
 
   for (const rect of scene.rectangles) {
     ctx.beginPath();
@@ -157,7 +175,7 @@ export function toCanvas(
     ctx.fillStyle = String(rect.fill);
     ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.18)';
-    ctx.lineWidth = 0.5 / ppm;
+    ctx.lineWidth = 0.5 / (ppm * dpr);
     ctx.stroke();
   }
 
@@ -170,7 +188,7 @@ export function toCanvas(
       ctx.fill();
     }
     ctx.strokeStyle = overlay.lineColor;
-    ctx.lineWidth = overlay.lineWidth / ppm;
+    ctx.lineWidth = overlay.lineWidth / (ppm * dpr);
     ctx.stroke();
   }
 
@@ -235,11 +253,14 @@ export function toCanvas(
     const ticks: number[] = [];
     if (step > 0) {
       const first = Math.ceil(vMin / step) * step;
-      for (let v = first; v <= vMax + 1e-10; v += step) {
+      for (let v = first; v <= vMax + step * 1e-6; v += step) {
         const py = (1 - (v - vMin) / vRange) * cbH;
         if (py > endpointGuard && py < cbH - endpointGuard) ticks.push(v);
       }
     }
+
+    const testDef = scene.testDefs?.find(t => t.index === scene.testIndex);
+    const tickUnit = testDef?.unit;
 
     // Draw intermediate ticks with middle baseline.
     ctx.textBaseline = 'middle';
@@ -249,7 +270,7 @@ export function toCanvas(
       ctx.moveTo(cbX + colorbarWidth, sy);
       ctx.lineTo(cbX + colorbarWidth + tickLen, sy);
       ctx.stroke();
-      ctx.fillText(fmt(v), cbX + colorbarWidth + tickLen + 2, sy);
+      ctx.fillText(fmt(v, tickUnit, fallbackFormat), cbX + colorbarWidth + tickLen + 2, sy);
     }
 
     // Always draw exact min/max at the bar edges.
@@ -258,20 +279,18 @@ export function toCanvas(
     ctx.lineTo(cbX + colorbarWidth + tickLen, cbY);
     ctx.stroke();
     ctx.textBaseline = 'top';
-    ctx.fillText(fmt(vMax), cbX + colorbarWidth + tickLen + 2, cbY);
+    ctx.fillText(fmt(vMax, tickUnit, fallbackFormat), cbX + colorbarWidth + tickLen + 2, cbY);
 
     ctx.beginPath();
     ctx.moveTo(cbX + colorbarWidth, cbY + cbH);
     ctx.lineTo(cbX + colorbarWidth + tickLen, cbY + cbH);
     ctx.stroke();
     ctx.textBaseline = 'bottom';
-    ctx.fillText(fmt(vMin), cbX + colorbarWidth + tickLen + 2, cbY + cbH);
+    ctx.fillText(fmt(vMin, tickUnit, fallbackFormat), cbX + colorbarWidth + tickLen + 2, cbY + cbH);
 
-    // Unit / test-name label above the bar (rotated 90°, reading bottom-to-top).
-    const testDef = scene.testDefs?.find(t => t.index === scene.testIndex);
-    const cbLabel = testDef
-      ? (testDef.unit ? `${testDef.name} (${testDef.unit})` : testDef.name)
-      : null;
+    // Test-name label above the bar (rotated 90°). When unit is shown inline
+    // with tick values via fmt(), just show the name here to avoid repetition.
+    const cbLabel = testDef?.name ?? null;
     if (cbLabel) {
       ctx.save();
       ctx.fillStyle   = '#555';
@@ -476,8 +495,4 @@ function niceStep(rawMm: number): number {
   return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * magnitude;
 }
 
-export function fmt(v: number): string {
-  return Math.abs(v) >= 100 ? v.toFixed(0)
-       : Math.abs(v) >= 10  ? v.toFixed(1)
-       :                       v.toFixed(2);
-}
+export { fmt } from '../renderer/fmt.js';

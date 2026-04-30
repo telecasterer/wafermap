@@ -200,6 +200,7 @@ export function renderWaferMap(
       testDefs:               so.testDefs,
       hbinDefs:               so.hbinDefs,
       sbinDefs:               so.sbinDefs,
+      fallbackFormat:               drawOptions.fallbackFormat,
       interactiveTransform: {
         rotation: so.rotation ?? 0,
         flipX:    so.flipX   ?? false,

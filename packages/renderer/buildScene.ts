@@ -6,6 +6,7 @@ import { rotatePoint } from '../core/transforms.js';
 import { contrastTextColor } from './colorMap.js';
 import { getColorScheme } from './colorSchemes.js';
 import type { TestDef, BinDef } from './buildWaferMap.js';
+import { fmt } from './fmt.js';
 
 type BinDefMap = Map<number, BinDef>;
 
@@ -119,6 +120,13 @@ export interface SceneOptions {
    * Which `bins[]` index to display in `hardbin` / `softbin` plot modes. Default `0`.
    */
   binIndex?: number;
+  /**
+   * Format to use for unitless values outside the normal display range [0.1, 9999].
+   * `'engineering'` (default): multiples-of-3 exponent notation (e.g. `12E-6`).
+   * `'si'`: SI prefix with no unit suffix (e.g. `12 µ`).
+   * Values with a unit always use SI prefix regardless of this setting.
+   */
+  fallbackFormat?: 'si' | 'engineering';
 }
 
 /** @deprecated Use {@link SceneOptions} */
@@ -243,6 +251,7 @@ function buildHoverText(
   testDefs?: TestDef[],
   hbinDefs?: BinDef[],
   sbinDefs?: BinDef[],
+  fallbackFormat?: 'si' | 'engineering',
 ): string {
   const lines: string[] = [`Die (${die.i}, ${die.j})`];
 
@@ -251,12 +260,11 @@ function buildHoverText(
       const parts = die.values.map((v, i) => {
         const def = testDefs.find(t => t.index === i);
         const label = def?.name ?? `Test ${i}`;
-        const unit  = def?.unit ? ` ${def.unit}` : '';
-        return `${label}: ${fmtHover(v)}${unit}`;
+        return `${label}: ${fmt(v, def?.unit, fallbackFormat)}`;
       });
       lines.push(parts.join('<br>'));
     } else {
-      lines.push(`Values: ${die.values.map((v) => fmtHover(v)).join(' / ')}`);
+      lines.push(`Values: ${die.values.map((v) => fmt(v, undefined, fallbackFormat)).join(' / ')}`);
     }
   }
 
@@ -299,13 +307,6 @@ function buildHoverText(
   return lines.join('<br>');
 }
 
-function fmtHover(v: number): string {
-  if (!isFinite(v)) return String(v);
-  const abs = Math.abs(v);
-  if (abs === 0) return '0';
-  if (abs >= 1000 || abs < 0.001) return v.toExponential(3);
-  return v.toPrecision(4).replace(/\.?0+$/, '');
-}
 
 export function generateTextOverlay(
   dies: Die[],
@@ -664,6 +665,7 @@ export function buildScene(
     sbinDefs,
     testIndex = 0,
     binIndex  = 0,
+    fallbackFormat = 'engineering' as const,
   } = options;
 
   // Hard and soft bins have independent number spaces — select the correct def map for the
@@ -723,7 +725,7 @@ export function buildScene(
 
   for (const tdie of transformedDies) {
     pushDieRectangles(rectangles, tdie, plotMode, transform, gap, colorFns, highlightBin, normalize, testIndex, binIndex, binDefMap);
-    hoverPoints.push({ x: tdie.x, y: tdie.y, text: buildHoverText(tdie, testDefs, hbinDefs, sbinDefs) });
+    hoverPoints.push({ x: tdie.x, y: tdie.y, text: buildHoverText(tdie, testDefs, hbinDefs, sbinDefs, fallbackFormat) });
   }
 
   const texts: SceneText[] = showText ? generateTextOverlay(transformedDies, { plotMode, colorFns, normalize, testIndex, binIndex }) : [];

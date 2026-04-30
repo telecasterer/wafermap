@@ -105,8 +105,8 @@ async function processData() {
     const results = waferRows.map(r => ({
       x:      Number(r[cfg.xCol]),
       y:      Number(r[cfg.yCol]),
-      bins:   cfg.hbinCol      ? [Number(r[cfg.hbinCol])]      : undefined,
-      values: cfg.valueCols[0] ? [Number(r[cfg.valueCols[0]])] : undefined,
+      bins:   cfg.hbinCol           ? [Number(r[cfg.hbinCol])]                   : undefined,
+      values: cfg.valueCols.length  ? cfg.valueCols.map(col => Number(r[col]))   : undefined,
     }));
     return { waferId, waferRows, results };
   });
@@ -290,7 +290,8 @@ function _doRefreshGallery() {
 
 function renderWafermapGallery() {
   const galleryEl = document.getElementById('wafermap-gallery');
-  const { selectedWafers, plotMode, valueChannel, colorScheme, showRings, showQuadrants, highlightBin } = state.ui;
+  galleryEl.classList.remove('bin-gallery-grid');
+  const { selectedWafers, plotMode, valueChannel, colorScheme, showRings, showQuadrants, showXY, highlightBin } = state.ui;
   const { diesByWafer, wafer } = state.data;
   const selected = [...selectedWafers].sort();
 
@@ -324,6 +325,7 @@ function renderWafermapGallery() {
       colorScheme,
       showRingBoundaries:     showRings,
       showQuadrantBoundaries: showQuadrants,
+      showXYIndicator:        showXY,
       highlightBin,
     },
     onSceneOptionsChange(opts) {
@@ -357,16 +359,22 @@ function renderMapStats(targetEl, dies) {
     const bin = die.bins?.[0] ?? 0;
     binCounts[bin] = (binCounts[bin] ?? 0) + 1;
   }
-  el.innerHTML = Object.entries(binCounts)
+  const total = fullDies.length;
+  const passBin = state.cfg.passBin;
+  const yieldChip = passBin !== null && total > 0
+    ? `<span class="stat-chip stat-chip-yield">Yield: ${(100 * (binCounts[passBin] ?? 0) / total).toFixed(1)}%</span>`
+    : '';
+  el.innerHTML = yieldChip + Object.entries(binCounts)
     .sort(([a], [b]) => Number(a) - Number(b))
     .map(([bin, count]) => {
-      const pct = (100 * count / fullDies.length).toFixed(1);
+      const pct = (100 * count / total).toFixed(1);
       return `<span class="stat-chip" style="border-color:${getColorScheme(state.ui.colorScheme).forBin(Number(bin))}">B${bin}: ${count} (${pct}%)</span>`;
     }).join('');
 }
 
 function renderBinGallery() {
   const gallery       = document.getElementById('wafermap-gallery');
+  gallery.classList.add('bin-gallery-grid');
   const { diesByWafer, wafer } = state.data;
   const { colorScheme, showRings } = state.ui;
   const allDies       = Object.values(diesByWafer).flat();
@@ -497,7 +505,6 @@ function populateMapControls() {
 
   const colorEl = document.getElementById('map-color');
   colorEl.innerHTML = listColorSchemes()
-    .filter(({ name }) => name !== 'color')
     .map(({ name, label }) => `<option value="${name}"${name === state.ui.colorScheme ? ' selected' : ''}>${label}</option>`)
     .join('');
 
@@ -508,6 +515,35 @@ function populateMapControls() {
     bins.map(b => `<option value="${b}">Bin ${b}</option>`).join('');
 }
 
+// ── Header yield stat ─────────────────────────────────────────────────────
+
+function updateHeaderYield() {
+  const statEl  = document.getElementById('hm-yield-stat');
+  const valEl   = document.getElementById('hm-yield');
+  const { passBin } = state.cfg;
+  if (passBin === null || !Object.keys(state.data.diesByWafer).length) {
+    statEl.hidden = true;
+    return;
+  }
+  const flatDies = Object.values(state.data.diesByWafer).flat().filter(d => !d.partial);
+  const passCount = flatDies.filter(d => d.bins?.[0] === passBin).length;
+  const yieldPct  = flatDies.length ? (100 * passCount / flatDies.length).toFixed(1) : '—';
+  valEl.textContent = yieldPct + '%';
+  statEl.hidden = false;
+}
+
+// ── Mobile menu ───────────────────────────────────────────────────────────
+
+function closeSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  sidebar.classList.remove('open');
+}
+
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  sidebar.classList.toggle('open');
+}
+
 // ── Event wiring ──────────────────────────────────────────────────────────────
 
 function wireEvents() {
@@ -515,6 +551,16 @@ function wireEvents() {
   const filePill   = document.getElementById('file-pill');
   const dropBanner = document.getElementById('drop-banner');
   const content    = document.getElementById('content');
+  const hamburger  = document.getElementById('hamburger-btn');
+  const sidebar    = document.getElementById('sidebar');
+
+  // Mobile: hamburger menu toggle
+  hamburger.addEventListener('click', toggleSidebar);
+
+  // Mobile: close sidebar when content is clicked
+  content.addEventListener('click', () => {
+    if (window.innerWidth <= 1024) closeSidebar();
+  });
 
   // File pill click / drag
   filePill.addEventListener('click', () => fileInput.click());
@@ -550,12 +596,14 @@ function wireEvents() {
     document.getElementById('map-section').hidden       = false;
 
     // Header meta
-    const allDies = Object.values(state.data.diesByWafer);
-    const bins    = getUniqueBins(Object.values(state.data.diesByWafer).flat());
+    const allDies    = Object.values(state.data.diesByWafer);
+    const flatDies   = allDies.flat();
+    const bins       = getUniqueBins(flatDies);
     document.getElementById('hm-wafers').textContent = state.data.waferIds.length;
     document.getElementById('hm-dies').textContent   = allDies[0]?.length ?? '—';
     document.getElementById('hm-bins').textContent   = bins.length;
     document.getElementById('header-meta').hidden    = false;
+    updateHeaderYield();
 
     renderPareto();
     renderYieldChart();
@@ -566,6 +614,7 @@ function wireEvents() {
     const v = e.target.value;
     state.cfg.passBin = v === '' ? null : Number(v);
     renderYieldChart();
+    updateHeaderYield();
   });
 
   document.getElementById('btn-view-maps').addEventListener('click', () => {
@@ -621,14 +670,50 @@ function wireEvents() {
   for (const [id, stateKey, optsKey] of [
     ['btn-rings',     'showRings',     'showRingBoundaries'],
     ['btn-quadrants', 'showQuadrants', 'showQuadrantBoundaries'],
-    ['btn-xy',        'showXY',        null],
+    ['btn-xy',        'showXY',        'showXYIndicator'],
   ]) {
     document.getElementById(id).addEventListener('change', e => {
       state.ui[stateKey] = e.target.checked;
-      if (optsKey && state.ui.view === 'maps' && galleryCtrl) galleryCtrl.setOptions({ [optsKey]: e.target.checked });
+      if (state.ui.view === 'maps' && galleryCtrl) galleryCtrl.setOptions({ [optsKey]: e.target.checked });
       else refreshGallery();
     });
   }
+}
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+
+function wireKeyboardShortcuts() {
+  document.addEventListener('keydown', e => {
+    const tagName = document.activeElement?.tagName;
+    const isInput = tagName === 'INPUT' || tagName === 'SELECT' || tagName === 'TEXTAREA';
+
+    // Ctrl+O: open file picker
+    if (e.ctrlKey && e.key === 'o' && !isInput) {
+      e.preventDefault();
+      document.getElementById('file-input').click();
+    }
+
+    // Ctrl+A: select all wafers (only if data loaded)
+    if (e.ctrlKey && e.key === 'a' && !isInput && state.data.waferIds.length) {
+      e.preventDefault();
+      state.data.waferIds.forEach(w => state.ui.selectedWafers.add(w));
+      refreshGallery();
+      renderYieldChart();
+    }
+
+    // Ctrl+C or Ctrl+Shift+C: clear selection
+    if ((e.ctrlKey && e.key === 'c') && !isInput && state.data.waferIds.length) {
+      e.preventDefault();
+      state.ui.selectedWafers.clear();
+      refreshGallery();
+      renderYieldChart();
+    }
+
+    // Esc: close sidebar on mobile
+    if (e.key === 'Escape') {
+      closeSidebar();
+    }
+  });
 }
 
 function handleFile(file) {
@@ -664,3 +749,4 @@ function handleFile(file) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 wireEvents();
+wireKeyboardShortcuts();
