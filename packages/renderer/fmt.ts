@@ -94,8 +94,9 @@ export function fmtColorbarAxis(
   }
 
   if (fallbackFormat === 'si') {
-    // SI prefix mode: same as with-unit path but suffix is empty.
-    const [scale, prefix] = SI_PREFIXES.find(([s]) => abs >= s * 0.9999) ?? [1e-15, 'f'];
+    // SI prefix mode: scale ticks by the SI prefix factor; label uses ×10ⁿ notation
+    // (the prefix letter alone is cryptic without a unit).
+    const [scale] = SI_PREFIXES.find(([s]) => abs >= s * 0.9999) ?? [1e-15, 'f'];
     const tickFmt = (v: number): string => {
       if (!isFinite(v)) return String(v);
       if (v === 0) return '0';
@@ -104,7 +105,9 @@ export function fmtColorbarAxis(
       const digits = a >= 100 ? 0 : a >= 10 ? 1 : 2;
       return scaled.toFixed(digits);
     };
-    const axisLabel = name ? `${name} (${prefix})` : `(${prefix})`;
+    const exp      = Math.round(Math.log10(scale));
+    const expLabel = exp === 0 ? '' : `×10E${exp}`;
+    const axisLabel = name ? (expLabel ? `${name} (${expLabel})` : name) : expLabel;
     return { tickFmt, axisLabel };
   }
 
@@ -123,16 +126,10 @@ export function fmtColorbarAxis(
     return scaled.toFixed(digits);
   };
 
-  const expLabel  = clamped === 0 ? '' : `×10${superscript(clamped)}`;
+  const expLabel  = clamped === 0 ? '' : `×10E${clamped}`;
   const axisLabel = name
     ? (expLabel ? `${name} (${expLabel})` : name)
     : expLabel;
   return { tickFmt, axisLabel };
 }
 
-function superscript(n: number): string {
-  return String(n).split('').map(c => (
-    { '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
-      '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' }[c] ?? c
-  )).join('');
-}

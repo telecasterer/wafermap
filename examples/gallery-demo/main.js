@@ -40,6 +40,7 @@ const SBIN_DEFS = [
 // ── State ──────────────────────────────────────────────────────────────────
 let showUnits       = true;
 let fallbackFormat  = 'engineering';
+let testIndex       = 0;        // which values[] to display in value/stackedValues mode
 let aggregated      = false;    // true = show aggregated lot map instead of individual wafers
 let aggrMethod      = 'mean';   // for aggregateValues
 let aggrParam       = 0;        // which values[] index to aggregate (test parameter)
@@ -84,29 +85,40 @@ function refreshGallery() {
   if (!gallery) return;
   const mode = currentPlotMode();
   gallery.setItems(buildGalleryItems(mode));
-  gallery.setOptions({ testDefs: currentTestDefs(), hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS });
+  gallery.setOptions({ testIndex, testDefs: currentTestDefs(), hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS });
   gallery.setFallbackFormat(fallbackFormat);
   syncControlVis();
 }
 
 // ── Controls ───────────────────────────────────────────────────────────────
 
-let elAggrControls = null;   // aggregation sub-controls row (shown when aggregated)
+let elTestParam    = null;   // test parameter selector (value/stackedValues modes)
+let elBinType      = null;   // hard/soft bin selector (hardbin/softbin/stackedBins modes)
+let elAggrControls = null;   // aggregation sub-controls (shown when aggregated)
 let elAggrMethod   = null;
 let elAggrParam    = null;
 let elAggrBin      = null;
 let elAggrBinType  = null;
 
-function syncControlVis() {
-  if (!elAggrControls) return;
-  elAggrControls.style.display = aggregated ? '' : 'none';
+function isBinPlotMode(mode) {
+  return mode === 'hardbin' || mode === 'softbin' || mode === 'stackedBins';
+}
 
+function syncControlVis() {
+  if (!elTestParam) return;
   const mode = currentPlotMode();
-  const isBinMode = mode === 'hardbin' || mode === 'softbin' || mode === 'stackedBins';
-  elAggrMethod.closest('label').style.display = aggregated && !isBinMode ? '' : 'none';
-  elAggrParam.closest('label').style.display  = aggregated && !isBinMode ? '' : 'none';
-  elAggrBin.closest('label').style.display    = aggregated && isBinMode  ? '' : 'none';
-  elAggrBinType.closest('label').style.display = aggregated && isBinMode ? '' : 'none';
+  const binMode = isBinPlotMode(mode);
+
+  elTestParam.closest('label').style.display = !binMode ? '' : 'none';
+  elBinType.closest('label').style.display   = binMode  ? '' : 'none';
+
+  if (elAggrControls) {
+    elAggrControls.style.display = aggregated ? '' : 'none';
+    elAggrMethod.closest('label').style.display = aggregated && !binMode ? '' : 'none';
+    elAggrParam.closest('label').style.display  = aggregated && !binMode ? '' : 'none';
+    elAggrBin.closest('label').style.display    = aggregated && binMode  ? '' : 'none';
+    elAggrBinType.closest('label').style.display = aggregated && binMode ? '' : 'none';
+  }
 }
 
 function buildControls() {
@@ -142,8 +154,40 @@ function buildControls() {
   unitSel.addEventListener('change', () => { showUnits = unitSel.value === 'units'; refreshGallery(); });
   unitLabel.appendChild(unitSel);
 
+  // Test parameter selector (value / stackedValues modes)
+  const testParamLabel = document.createElement('label');
+  testParamLabel.textContent = 'Parameter: ';
+  elTestParam = document.createElement('select');
+  TEST_DEFS_WITH_UNITS.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.index; o.textContent = d.name;
+    if (d.index === testIndex) o.selected = true;
+    elTestParam.appendChild(o);
+  });
+  elTestParam.addEventListener('change', () => {
+    testIndex = Number(elTestParam.value);
+    gallery?.setOptions({ testIndex });
+  });
+  testParamLabel.appendChild(elTestParam);
+
+  // Bin type selector (hardbin / softbin / stackedBins modes)
+  const binTypeRowLabel = document.createElement('label');
+  binTypeRowLabel.textContent = 'Bin type: ';
+  elBinType = document.createElement('select');
+  [['0', 'Hard bin'], ['1', 'Soft bin']].forEach(([v, t]) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = t;
+    elBinType.appendChild(o);
+  });
+  elBinType.addEventListener('change', () => {
+    gallery?.setOptions({ binIndex: Number(elBinType.value) });
+  });
+  binTypeRowLabel.appendChild(elBinType);
+
   row1.appendChild(fmtLabel);
   row1.appendChild(unitLabel);
+  row1.appendChild(testParamLabel);
+  row1.appendChild(binTypeRowLabel);
 
   // ── Row 2: aggregation controls ───────────────────────────────────────────
   const row2 = document.createElement('div');
@@ -293,7 +337,7 @@ async function main() {
     {
       sceneOptions: {
         plotMode:  'value',
-        testIndex: 0,
+        testIndex,
         testDefs:  currentTestDefs(),
         hbinDefs:  HBIN_DEFS,
         sbinDefs:  SBIN_DEFS,
